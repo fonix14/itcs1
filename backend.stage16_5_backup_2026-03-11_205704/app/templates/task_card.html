@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title }}</title>
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #111827; --panel-2: #1f2937; --text: #e5e7eb;
+      --muted: #94a3b8; --border: #334155;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Arial,sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:1100px; margin:0 auto; padding:20px; }
+    .title { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:16px; }
+    .label { color:var(--muted); font-size:13px; margin-bottom:8px; }
+    .value { font-size:18px; font-weight:700; }
+    .muted { color:var(--muted); }
+    button, a.btn {
+      padding:10px 14px; border:1px solid var(--border); border-radius:10px;
+      background:var(--panel-2); color:var(--text); cursor:pointer; text-decoration:none; display:inline-block;
+    }
+    textarea {
+      width:100%; min-height:120px; background:#0b1220; color:var(--text);
+      border:1px solid var(--border); border-radius:10px; padding:12px;
+    }
+    .actions { display:flex; gap:10px; margin-top:12px; }
+    .events { margin:0; padding-left:18px; }
+    @media (max-width: 800px) { .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap" data-task-id="{{ task_id }}">
+    <div class="title">
+      <div>
+        <h1>Карточка заявки #{{ task_id }}</h1>
+        <div class="muted">Принятие и комментарии</div>
+      </div>
+      <a class="btn" href="/ui/tasks">← К списку</a>
+    </div>
+
+    <div class="grid">
+      <div class="card"><div class="label">Portal Task ID</div><div class="value" id="portal_task_id">—</div></div>
+      <div class="card"><div class="label">Статус</div><div class="value" id="status">—</div></div>
+      <div class="card"><div class="label">Магазин</div><div class="value" id="store_no">—</div></div>
+      <div class="card"><div class="label">Менеджер</div><div class="value" id="manager_name">—</div></div>
+      <div class="card"><div class="label">SLA</div><div class="value" id="sla">—</div></div>
+      <div class="card"><div class="label">Last seen</div><div class="value" id="last_seen_at">—</div></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="label">Действия</div>
+      <div class="actions">
+        <button onclick="acceptTask()">Принял</button>
+        <button onclick="reloadTask()">Обновить</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="label">Комментарий</div>
+      <textarea id="comment_text" placeholder="Введите комментарий"></textarea>
+      <div class="actions">
+        <button onclick="sendComment()">Сохранить комментарий</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="label">История событий</div>
+      <ul id="events" class="events">
+        <li class="muted">Загрузка...</li>
+      </ul>
+    </div>
+  </div>
+  <script src="/static/task_card.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+from fastapi import FastAPI
+
+from app.ui import router as ui_router
+from app.ui_ops import router as ui_ops_router
+
+from app.api.tasks_uploads import router as tasks_upload_router
+from app.api.portal_l4_uploads import router as portal_l4_router
+
+from app.api.ops_tasks_workspace import router as ops_tasks_ws
+from app.api.ops_task_card import router as ops_task_card
+from app.api.ops_actions import router as ops_actions
+
+
+app = FastAPI()
+
+# Base routes
+app.include_router(ui_router)
+app.include_router(ui_ops_router)
+
+# Import routes
+app.include_router(tasks_upload_router)
+app.include_router(portal_l4_router)
+
+# Ops API
+app.include_router(ops_tasks_ws)
+app.include_router(ops_task_card)
+app.include_router(ops_actions)
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok"}

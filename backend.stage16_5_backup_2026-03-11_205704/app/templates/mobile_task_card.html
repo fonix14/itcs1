@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title }}</title>
+  <style>
+    :root {
+      --bg:#0f172a; --panel:#111827; --panel2:#1f2937; --text:#e5e7eb;
+      --muted:#94a3b8; --border:#334155;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Arial,sans-serif; }
+    .wrap { max-width:760px; margin:0 auto; padding:16px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; }
+    h1 { margin:0; font-size:28px; }
+    .btn, button {
+      background:var(--panel2); color:var(--text); border:1px solid var(--border);
+      border-radius:12px; padding:12px 14px; font-size:16px; text-decoration:none; cursor:pointer;
+    }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:12px; }
+    .label { color:var(--muted); font-size:13px; margin-bottom:6px; }
+    .value { font-size:18px; font-weight:700; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    textarea {
+      width:100%; min-height:120px; background:#0b1220; color:var(--text);
+      border:1px solid var(--border); border-radius:12px; padding:12px; font-size:16px;
+    }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    input[type="file"] {
+      width:100%; background:var(--panel2); color:var(--text);
+      border:1px solid var(--border); border-radius:12px; padding:12px;
+    }
+    .att {
+      border:1px solid var(--border); border-radius:12px; padding:10px; margin-top:10px;
+    }
+    .att img {
+      width:100%; max-height:240px; object-fit:cover; border-radius:10px; margin-top:8px;
+      background:#000;
+    }
+    ul { margin:0; padding-left:18px; }
+    @media (max-width: 560px) { .grid { grid-template-columns:1fr; } .topbar { flex-direction:column; align-items:stretch; } .btn { text-align:center; } }
+  </style>
+</head>
+<body>
+  <div class="wrap" data-task-id="{{ task_id }}">
+    <div class="topbar">
+      <div>
+        <h1>Заявка #{{ task_id }}</h1>
+        <div style="color:#94a3b8;">Mobile карточка менеджера</div>
+      </div>
+      <a class="btn" href="/m/tasks">← К списку</a>
+    </div>
+
+    <div class="grid">
+      <div class="card"><div class="label">Portal Task ID</div><div class="value" id="portal_task_id">—</div></div>
+      <div class="card"><div class="label">Статус</div><div class="value" id="status">—</div></div>
+      <div class="card"><div class="label">Магазин</div><div class="value" id="store_no">—</div></div>
+      <div class="card"><div class="label">Менеджер</div><div class="value" id="manager_name">—</div></div>
+      <div class="card"><div class="label">SLA</div><div class="value" id="sla">—</div></div>
+      <div class="card"><div class="label">Last seen</div><div class="value" id="last_seen_at">—</div></div>
+    </div>
+
+    <div class="card">
+      <div class="label">Быстрые действия</div>
+      <div class="actions">
+        <button onclick="acceptTask()">Принял</button>
+        <button onclick="reloadTask()">Обновить</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Комментарий</div>
+      <textarea id="comment_text" placeholder="Введите комментарий"></textarea>
+      <div class="actions">
+        <button onclick="sendComment()">Сохранить комментарий</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Фото</div>
+      <input id="photo_input" type="file" accept="image/*" capture="environment">
+      <div class="actions">
+        <button onclick="uploadPhoto()">Загрузить фото</button>
+      </div>
+      <div id="attachments">Нет фото</div>
+    </div>
+
+    <div class="card">
+      <div class="label">История событий</div>
+      <ul id="events">
+        <li>Загрузка...</li>
+      </ul>
+    </div>
+  </div>
+  <script src="/static/mobile_task_card.js"></script>
+</body>
+</html>

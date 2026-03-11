@@ -1,0 +1,44 @@
+from pathlib import Path
+p = Path("app/notifier/main.py")
+s = p.read_text(encoding="utf-8")
+
+import re
+
+pattern = r"async def send_matrix_message\(.*?async with httpx.AsyncClient.*?raise RuntimeError.*?\n"
+replacement = """
+async def send_matrix_message(room_id: str, text: str) -> None:
+    if not MATRIX_BASE_URL or not MATRIX_ACCESS_TOKEN:
+        raise RuntimeError("Matrix env not configured")
+
+    txn_id = str(uuid.uuid4())
+    url = f"{MATRIX_BASE_URL}/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn_id}"
+
+    body = {
+        "msgtype": "m.text",
+        "body": text,
+        "format": "org.matrix.custom.html",
+        "formatted_body": "<pre>" + _escape_html(text) + "</pre>",
+    }
+
+    headers = {"Authorization": f"Bearer {MATRIX_ACCESS_TOKEN}"}
+
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        r = await client.put(url, json=body, headers=headers)
+
+        if r.status_code == 429:
+            retry_ms = 3000
+            try:
+                retry_ms = r.json().get("retry_after_ms", 3000)
+            except Exception:
+                pass
+            await asyncio.sleep(retry_ms / 1000)
+            raise RuntimeError("Rate limited by Matrix (429)")
+
+        if r.status_code >= 400:
+            raise RuntimeError(f"Matrix send failed: {r.status_code} {r.text[:500]}")
+
+    await asyncio.sleep(0.3)  # анти-спам пауза
+"""
+s2 = re.sub(pattern, replacement, s, flags=re.S)
+p.write_text(s2, encoding="utf-8")
+print("[+] send_matrix_message patched")

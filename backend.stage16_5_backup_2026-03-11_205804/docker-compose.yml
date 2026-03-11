@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: itcs
+      POSTGRES_USER: itcs
+      POSTGRES_PASSWORD: itcs
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itcs -d itcs"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${APP_NAME}
+      MATRIX_BASE_URL: ${MATRIX_BASE_URL}
+      MATRIX_ACCESS_TOKEN: ${MATRIX_ACCESS_TOKEN}
+      MATRIX_ROOM_ID: ${MATRIX_ROOM_ID}
+      PORTAL_BASE_URL: ${PORTAL_BASE_URL}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_TLS: ${SMTP_TLS}
+    ports: ["8080:8080"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  notifier:
+    restart: unless-stopped
+    build: .
+    command: ["python", "-m", "app.notifier"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      APP_ENV: ${APP_ENV}
+      APP_NAME: ${APP_NAME}
+      MATRIX_BASE_URL: ${MATRIX_BASE_URL}
+      MATRIX_ACCESS_TOKEN: ${MATRIX_ACCESS_TOKEN}
+      MATRIX_ROOM_ID: ${MATRIX_ROOM_ID}
+      PORTAL_BASE_URL: ${PORTAL_BASE_URL}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_TLS: ${SMTP_TLS}
+      NOTIFIER_ACTOR_USER_ID: ${NOTIFIER_ACTOR_USER_ID}
+      OUTBOX_POLL_INTERVAL_SEC: ${OUTBOX_POLL_INTERVAL_SEC}
+      NOTIFIER_DAILY_HEALTH_HOUR_UTC: ${NOTIFIER_DAILY_HEALTH_HOUR_UTC}
+      NOTIFIER_ENABLED: ${NOTIFIER_ENABLED:-1}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,0 +1,104 @@
+"""stage2 import tables + metrics + anomalies
+
+Revision ID: 0002_stage2_import
+Revises: 0001_init_rls
+"""
+
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+revision = "0002_stage2_import"
+down_revision = "0001_init_rls"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    # enums
+    op.execute("""
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'anomaly_severity') THEN
+        CREATE TYPE anomaly_severity AS ENUM ('critical','major','minor');
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'anomaly_status') THEN
+        CREATE TYPE anomaly_status AS ENUM ('open','resolved');
+      END IF;
+    END$$;
+    """)
+
+    op.create_table(
+        "uploads",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("file_name", sa.String(255), nullable=False),
+        sa.Column("file_hash", sa.String(64), nullable=False, unique=True),
+        sa.Column("profile_id", sa.String(80), nullable=False, server_default=sa.text("'default'")),
+        sa.Column("uploaded_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column("total_rows", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("valid_rows", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("invalid_rows", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("invalid_ratio", sa.Float(), nullable=False, server_default=sa.text("0")),
+        sa.Column("seen_tasks_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+    )
+
+    op.create_table(
+        "tasks_staging",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("upload_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("uploads.id"), nullable=False),
+        sa.Column("row_number", sa.Integer(), nullable=False),
+        sa.Column("portal_task_id", sa.String(100), nullable=True),
+        sa.Column("store_no", sa.String(50), nullable=True),
+        sa.Column("status", sa.String(50), nullable=True),
+        sa.Column("sla", sa.String(50), nullable=True),
+        sa.Column("raw_row", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("validation_error", sa.Text(), nullable=True),
+    )
+
+    op.create_table(
+        "import_errors",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("upload_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("uploads.id"), nullable=False),
+        sa.Column("row_number", sa.Integer(), nullable=False),
+        sa.Column("error_code", sa.String(80), nullable=False),
+        sa.Column("details", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    )
+
+    op.create_table(
+        "upload_metrics",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("upload_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("uploads.id"), nullable=False, unique=True),
+        sa.Column("baseline_seen", sa.Float(), nullable=True),
+        sa.Column("abs_drop", sa.Integer(), nullable=True),
+        sa.Column("rel_drop", sa.Float(), nullable=True),
+        sa.Column("coverage_drop", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+    )
+
+    op.create_table(
+        "anomalies",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("anomaly_type", sa.String(80), nullable=False),
+        sa.Column("severity", sa.Enum("critical","major","minor", name="anomaly_severity"), nullable=False),
+        sa.Column("status", sa.Enum("open","resolved", name="anomaly_status"), nullable=False, server_default=sa.text("'open'")),
+        sa.Column("related_upload_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("uploads.id"), nullable=True),
+        sa.Column("related_task_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("tasks.id"), nullable=True),
+        sa.Column("details", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
+        sa.Column("due_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column("resolved_at", sa.DateTime(timezone=True), nullable=True),
+    )
+
+    # RLS: dispatcher-only for import/audit tables
+    for t in ["uploads","tasks_staging","import_errors","upload_metrics","anomalies"]:
+        op.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY;")
+        op.execute(f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY;")
+        op.execute(f"CREATE POLICY {t}_dispatcher_all ON {t} FOR ALL USING (app.is_dispatcher()) WITH CHECK (app.is_dispatcher());")
+
+
+def downgrade() -> None:
+    for t in ["anomalies","upload_metrics","import_errors","tasks_staging","uploads"]:
+        op.drop_table(t)
+    op.execute("DROP TYPE IF EXISTS anomaly_status")
+    op.execute("DROP TYPE IF EXISTS anomaly_severity")

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Task Card</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #0b0b0b;
+      color: #f3f3f3;
+      font-family: Arial, sans-serif;
+    }
+
+    a {
+      color: #7dbbff;
+      text-decoration: none;
+    }
+
+    h1 {
+      margin: 10px 0 20px;
+    }
+
+    .card {
+      background: #131313;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .row {
+      margin-bottom: 10px;
+    }
+
+    .label {
+      color: #9f9f9f;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .value {
+      font-size: 15px;
+      line-height: 1.4;
+    }
+
+    textarea, input, button {
+      width: 100%;
+      box-sizing: border-box;
+      background: #0f0f0f;
+      color: #f3f3f3;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .comment {
+      border-bottom: 1px solid #242424;
+      padding: 10px 0;
+    }
+
+    .muted {
+      color: #8d8d8d;
+      font-size: 12px;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0e0e0e;
+      border: 1px solid #2f2f2f;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 13px;
+      color: #ddd;
+    }
+  </style>
+</head>
+<body>
+  <a href="/ui/tasks">← Назад к задачам</a>
+  <h1>Task Card</h1>
+
+  <div class="card">
+    <div class="row">
+      <div class="label">Portal ID</div>
+      <div class="value" id="portal_id">Загрузка...</div>
+    </div>
+
+    <div class="row">
+      <div class="label">Store ID</div>
+      <div class="value" id="store_id">—</div>
+    </div>
+
+    <div class="row">
+      <div class="label">Status</div>
+      <div class="value" id="status">—</div>
+    </div>
+
+    <div class="row">
+      <div class="label">SLA</div>
+      <div class="value" id="sla_due_at">—</div>
+    </div>
+
+    <div class="row">
+      <div class="label">Last Seen</div>
+      <div class="value" id="last_seen_at">—</div>
+    </div>
+
+    <div class="row">
+      <div class="label">Payload</div>
+      <pre id="payload">—</pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Действия</h3>
+    <button onclick="ackTask()">Принял</button>
+
+    <input id="visit" type="text" placeholder="Плановая дата визита, пример: 2026-03-07 10:00">
+    <button onclick="setVisit()">Сохранить визит</button>
+
+    <textarea id="comment" rows="4" placeholder="Комментарий"></textarea>
+    <button onclick="sendComment()">Добавить комментарий</button>
+  </div>
+
+  <div class="card">
+    <h3>Комментарии</h3>
+    <div id="comments">Загрузка...</div>
+  </div>
+
+  <div class="card">
+    <h3>Активность</h3>
+    <div id="activity">Загрузка...</div>
+  </div>
+
+  <script>
+    const TASK_ID = "{{ task_id }}";
+
+    function fmtDate(v) {
+      if (!v) return "—";
+      return String(v).replace("T", " ").replace("+00:00", "");
+    }
+
+    async function loadTask() {
+      const res = await fetch(`/api/ops/tasks/${TASK_ID}`);
+      const data = await res.json();
+      const task = data.task || {};
+
+      document.getElementById("portal_id").innerText = task.portal_task_id || "—";
+      document.getElementById("store_id").innerText = task.store_id || "—";
+      document.getElementById("status").innerText = task.status || "—";
+      document.getElementById("sla_due_at").innerText = fmtDate(task.sla_due_at);
+      document.getElementById("last_seen_at").innerText = fmtDate(task.last_seen_at);
+      document.getElementById("payload").innerText = JSON.stringify(task.payload || {}, null, 2);
+
+      const comments = document.getElementById("comments");
+      comments.innerHTML = "";
+      if (data.comments && data.comments.length > 0) {
+        for (const c of data.comments) {
+          const div = document.createElement("div");
+          div.className = "comment";
+          div.innerHTML = `<div>${c.body || ""}</div><div class="muted">${fmtDate(c.created_at)}</div>`;
+          comments.appendChild(div);
+        }
+      } else {
+        comments.innerHTML = '<div class="muted">Комментариев пока нет</div>';
+      }
+
+      const activity = document.getElementById("activity");
+      activity.innerHTML = "";
+      if (data.activity && data.activity.length > 0) {
+        for (const a of data.activity) {
+          const div = document.createElement("div");
+          div.className = "comment";
+          div.innerHTML = `<div>${a.event_type || ""}</div><div class="muted">${fmtDate(a.created_at)}</div>`;
+          activity.appendChild(div);
+        }
+      } else {
+        activity.innerHTML = '<div class="muted">Активности пока нет</div>';
+      }
+    }
+
+    async function ackTask() {
+      await fetch(`/api/ops/tasks/${TASK_ID}/ack`, { method: "POST" });
+      alert("Задача отмечена как принята");
+      await loadTask();
+    }
+
+    async function setVisit() {
+      const planned = document.getElementById("visit").value.trim();
+      if (!planned) {
+        alert("Укажи дату визита");
+        return;
+      }
+      await fetch(`/api/ops/tasks/${TASK_ID}/visit?planned=${encodeURIComponent(planned)}`, {
+        method: "POST"
+      });
+      alert("Дата визита сохранена");
+      await loadTask();
+    }
+
+    async function sendComment() {
+      const body = document.getElementById("comment").value.trim();
+      if (!body) {
+        alert("Комментарий пустой");
+        return;
+      }
+      await fetch(`/api/ops/tasks/${TASK_ID}/comments?body=${encodeURIComponent(body)}`, {
+        method: "POST"
+      });
+      document.getElementById("comment").value = "";
+      await loadTask();
+    }
+
+    loadTask();
+  </script>
+</body>
+</html>
