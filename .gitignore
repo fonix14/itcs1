@@ -1,20 +1,21 @@
 __pycache__/
 *.pyc
-*.pyo
-*.log
+
+*.bak
+*.backup
+*.stage*
 *.zip
 *.tar
 *.gz
+
+*.xlsx
+*.jpg
+*.png
+
 .env
 .env.*
-venv/
-.venv/
-node_modules/
 
-backend.stage*
+stage*
 backup*
-*.sqlite
-*.db
 
-uploads/
-tmp/
+_chat_bundle/
