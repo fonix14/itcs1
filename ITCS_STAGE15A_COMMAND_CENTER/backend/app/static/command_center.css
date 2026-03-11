@@ -1,0 +1,226 @@
+:root {
+  --bg: #0b1220;
+  --panel: #121a2b;
+  --panel-2: #182235;
+  --text: #e5edf8;
+  --muted: #9fb0c9;
+  --line: rgba(255,255,255,.08);
+  --accent: #5eead4;
+  --green: #22c55e;
+  --yellow: #f59e0b;
+  --red: #ef4444;
+  --slate: #64748b;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: linear-gradient(180deg, #08101d 0%, #0b1220 100%);
+  color: var(--text);
+}
+
+.page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.hero, .card {
+  background: rgba(18, 26, 43, .92);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.25);
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 28px;
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+h1, h2 { margin: 0 0 10px; }
+h1 { font-size: 32px; }
+h2 { font-size: 20px; }
+.subtitle, .helper, .module-desc, .trust-meta, .summary-box p, .roadmap-list {
+  color: var(--muted);
+}
+
+.top-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-self: flex-start;
+}
+
+.top-links a, .inline-link {
+  color: var(--text);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: 10px 14px;
+  border-radius: 14px;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.kpi-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card {
+  padding: 22px;
+}
+
+.kpi-card .card-title {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.kpi-card .card-value {
+  font-size: 34px;
+  font-weight: 700;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.badge.green { background: rgba(34,197,94,.14); color: #86efac; border-color: rgba(34,197,94,.3); }
+.badge.yellow { background: rgba(245,158,11,.14); color: #fcd34d; border-color: rgba(245,158,11,.3); }
+.badge.red { background: rgba(239,68,68,.14); color: #fda4af; border-color: rgba(239,68,68,.3); }
+.badge.slate { background: rgba(100,116,139,.18); color: #cbd5e1; border-color: rgba(100,116,139,.28); }
+
+.meta-list {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.meta-list div {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.meta-list dt {
+  color: var(--muted);
+}
+
+.meta-list dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.summary-box {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--line);
+}
+
+.summary-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.actions-grid, .modules-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.actions-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.modules-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.action-btn, .module-card {
+  text-decoration: none;
+  color: var(--text);
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  font-weight: 600;
+}
+
+.action-icon, .module-icon {
+  font-size: 22px;
+}
+
+.module-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.module-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.roadmap-list {
+  padding-left: 18px;
+  margin: 0;
+}
+
+.roadmap-list li { margin-bottom: 10px; }
+
+@media (max-width: 960px) {
+  .hero, .two-col { grid-template-columns: 1fr; display: grid; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .page { padding: 14px; }
+  .hero, .card { padding: 18px; border-radius: 20px; }
+  .kpi-grid, .two-col { grid-template-columns: 1fr; }
+  h1 { font-size: 26px; }
+}

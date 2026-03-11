@@ -1,0 +1,10 @@
+services:
+  notifier:
+    env_file:
+      - .env
+    environment:
+      NOTIFIER_ENABLED: ${NOTIFIER_ENABLED:-1}
+      MATRIX_BASE_URL: ${MATRIX_BASE_URL}
+      MATRIX_ACCESS_TOKEN: ${MATRIX_ACCESS_TOKEN}
+      MATRIX_ROOM_ID: ${MATRIX_ROOM_ID:-}
+      PORTAL_BASE_URL: ${PORTAL_BASE_URL:-}

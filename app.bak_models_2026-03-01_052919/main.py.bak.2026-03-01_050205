@@ -1,0 +1,22 @@
+from __future__ import annotations
+
+from fastapi import FastAPI
+
+# Базовые роутеры проекта
+# (Важно: notifier живёт отдельно как сервис app.notifier и НЕ должен импортироваться здесь)
+
+from app.api.routes import health as health_routes
+from app.api.routes import uploads as uploads_routes
+from app.api.routes import notifications as notifications_routes
+
+app = FastAPI(title="ITCS API", version="4.0.0")
+
+# Роуты
+app.include_router(health_routes.router, prefix="/api")
+app.include_router(uploads_routes.router, prefix="/api")
+app.include_router(notifications_routes.router, prefix="/api")
+
+
+@app.get("/ping")
+async def ping() -> dict:
+    return {"ok": True, "service": "api"}

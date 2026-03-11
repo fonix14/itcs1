@@ -1,0 +1,11 @@
+from fastapi import FastAPI
+
+app = FastAPI(title="ITCS API", version="4.0.0")
+
+@app.get("/ping")
+async def ping():
+    return {"ok": True, "service": "api"}
+
+# Если в проекте есть router-модули, они должны
+# подключаться здесь вручную.
+# Пока запускаем минимальный API без внешних импортов.
