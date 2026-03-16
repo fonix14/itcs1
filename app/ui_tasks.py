@@ -1,19 +1,26 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+
+from app.auth_ui import require_ui_dispatcher
 
 router = APIRouter()
 
 
 @router.get("/ui/tasks", response_class=HTMLResponse)
-async def ui_tasks():
-    html = """
+async def ui_tasks(request: Request):
+    guard = require_ui_dispatcher(request)
+    if not isinstance(guard, dict):
+        return guard
+
+    return HTMLResponse("""
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ITCS — Задачи</title>
-  <link rel="stylesheet" href="/static/ops_unified.css?v=force20260311a">
+  <title>Задачи</title>
+  <link rel="stylesheet" href="/static/tasks_ui.css">
+  <link rel="stylesheet" href="/static/responsive_global.css?v=resp1">
 </head>
 <body>
   <div class="page">
@@ -21,7 +28,7 @@ async def ui_tasks():
       <div>
         <div class="eyebrow">ITCS / ЗАДАЧИ</div>
         <h1>Задачи</h1>
-        <div class="subline">Единый экран контроля задач, SLA и состояния магазинов.</div>
+        <div class="subline">Общий список задач для диспетчера.</div>
       </div>
       <nav class="topbar-actions">
         <a class="btn" href="/ui/director">Главная</a>
@@ -29,41 +36,15 @@ async def ui_tasks():
         <a class="btn primary" href="/ui/tasks">Задачи</a>
         <a class="btn" href="/ui/admin/managers">Менеджеры</a>
         <a class="btn" href="/ui/dashboard">Дашборд диспетчера</a>
-        <a class="btn" href="/ui/upload">Загрузка Excel</a>
+        <a class="btn" href="/ui/admin/profile">Админ</a>
+        <a class="btn" href="/logout">Выход</a>
       </nav>
     </header>
 
-    <section class="card">
-      <div class="toolbar-row">
-        <input id="searchInput" class="input" placeholder="Поиск по Portal ID / магазину / статусу">
-        <button id="refreshBtn" class="action-btn">Обновить</button>
-      </div>
-      <div class="toolbar-meta">
-        <span id="tasksCount">Найдено задач: —</span>
-        <span>Автообновление: 15 сек</span>
-      </div>
-    </section>
+    <div id="tasksApp">Загрузка...</div>
 
-    <section class="card">
-      <table class="table" id="tasksTable">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Portal ID</th>
-            <th>Магазин</th>
-            <th>Статус</th>
-            <th>SLA</th>
-            <th>Последнее обновление</th>
-            <th>Открыть</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
+    <script src="/static/tasks_list.js"></script>
   </div>
-
-  <script src="/static/ui_tasks_fixed.js?v=force20260311a"></script>
 </body>
 </html>
-    """
-    return HTMLResponse(html, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
+    """)

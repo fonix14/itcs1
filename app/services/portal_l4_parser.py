@@ -1,175 +1,177 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Dict, Any
+from io import BytesIO
+import hashlib
 
-import openpyxl
+import pandas as pd
 
 
 @dataclass
-class PortalL4ParseResult:
+class ParseResult:
     tasks: List[Dict[str, Any]]
-    invalid: int
     total: int
-    headers: List[str]  # debug
+    invalid: int
+    headers: List[str]
 
 
-def _s(v: Any) -> str:
-    if v is None:
-        return ""
-    if isinstance(v, datetime):
-        return v.strftime("%Y-%m-%d %H:%M")
-    if isinstance(v, (int, float)):
-        if isinstance(v, float) and v.is_integer():
-            v = int(v)
-        return str(v)
-    return str(v).strip()
+def normalize(name: str) -> str:
+    s = str(name).strip().lower()
+    s = s.replace("\n", " ")
+    s = s.replace("\t", " ")
+    s = " ".join(s.split())
+    return s
 
 
-def _parse_dt_str(s: str) -> str:
-    s = (s or "").strip()
-    if not s:
-        return ""
-    for fmt in (
-        "%d-%m-%Y %H:%M:%S",
-        "%d-%m-%Y %H:%M",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%d.%m.%Y %H:%M:%S",
-        "%d.%m.%Y %H:%M",
-        "%d-%m-%Y",
-        "%d.%m.%Y",
-        "%Y-%m-%d",
-    ):
-        try:
-            dt = datetime.strptime(s, fmt)
-            return dt.strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            pass
-    return ""
+def find_col(df, variants):
+    norm_map = {normalize(c): c for c in df.columns}
+    for variant in variants:
+        v = normalize(variant)
+        if v in norm_map:
+            return norm_map[v]
 
-
-def _norm(s: str) -> str:
-    return (s or "").strip().lower().replace("\n", " ").replace("\t", " ")
-
-
-def _find_col_by_any(header: Dict[str, int], *, exact: List[str], contains: List[str]) -> Optional[int]:
-    # 1) exact match
-    for name in exact:
-        if name in header:
-            return header[name]
-    # 2) normalized exact
-    norm_map = {_norm(k).replace(" ", "").replace(",", ""): v for k, v in header.items()}
-    for name in exact:
-        key = _norm(name).replace(" ", "").replace(",", "")
-        if key in norm_map:
-            return norm_map[key]
-    # 3) contains keywords
-    for k, v in header.items():
-        kl = _norm(k)
-        for part in contains:
-            if part in kl:
-                return v
+    for c in df.columns:
+        nc = normalize(c)
+        for variant in variants:
+            vv = normalize(variant)
+            if vv in nc or nc in vv:
+                return c
     return None
 
 
-def parse_portal_l4_xlsx(file_bytes: bytes) -> PortalL4ParseResult:
-    wb = openpyxl.load_workbook(filename=bytes_to_temp(file_bytes), data_only=True)
-    ws = wb["Tasks"] if "Tasks" in wb.sheetnames else wb[wb.sheetnames[0]]
-
-    header: Dict[str, int] = {}
-    headers_list: List[str] = []
-    for col in range(1, ws.max_column + 1):
-        name = ws.cell(1, col).value
-        if name is None:
-            continue
-        key = str(name).strip()
-        header[key] = col
-        headers_list.append(key)
-
-    req = [
-        "Идентификатор Портала",
-        "Дата создания",
-        "Уровень 4",
-        "Текст обращения",
-        "Номер магазина",
-    ]
-    missing = [x for x in req if x not in header]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
-
-    # robust columns
-    sla_col = _find_col_by_any(
-        header,
-        exact=["Дата SLA", "Контроль до", "SLA"],
-        contains=["sla", "контрол", "крайн", "дедлайн", "срок"],
+def make_portal_task_id(row: dict) -> str:
+    base = " | ".join(
+        [
+            str(row.get("store_no") or "").strip(),
+            str(row.get("incident_type") or "").strip(),
+            str(row.get("text") or "").strip(),
+            str(row.get("status") or "").strip(),
+            str(row.get("created_at") or "").strip(),
+        ]
     )
-    comments_col = _find_col_by_any(
-        header,
-        exact=["Комментарии", "Комментарий", "Коммент"],
-        contains=["коммент", "примеч", "описан", "ответ", "результат"],
-    )
-    loc_col = _find_col_by_any(
-        header,
-        exact=["Местонахождение", "Местоположение", "Адрес", "Локация"],
-        contains=["место", "локац", "адрес", "тц", "магазин находится"],
-    )
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:24]
+
+
+def parse_portal_l4_xlsx(content: bytes) -> ParseResult:
+    df = pd.read_excel(BytesIO(content), dtype=object)
+
+    headers = [str(x) for x in df.columns]
+
+    col_portal_id = find_col(df, [
+        "portal_task_id",
+        "portal id",
+        "task id",
+        "id",
+        "номер заявки",
+        "№ заявки",
+        "номер обращения",
+        "обращение id",
+        "заявка id",
+    ])
+
+    col_store_no = find_col(df, [
+        "store_no",
+        "store no",
+        "store",
+        "номер магазина",
+        "№ магазина",
+        "магазин",
+        "код магазина",
+        "тт",
+        "торговая точка",
+        "уровень 4",
+    ])
+
+    col_sla = find_col(df, [
+        "sla",
+        "sla_date",
+        "дата sla",
+        "срок sla",
+        "дедлайн",
+        "deadline",
+        "срок",
+    ])
+
+    col_created = find_col(df, [
+        "created_at",
+        "created",
+        "дата создания",
+        "создано",
+        "дата",
+        "created date",
+    ])
+
+    col_status = find_col(df, [
+        "status",
+        "статус",
+    ])
+
+    col_type = find_col(df, [
+        "тип инцидента",
+        "incident type",
+        "type",
+        "категория",
+        "тип",
+    ])
+
+    col_text = find_col(df, [
+        "текст обращения",
+        "description",
+        "описание",
+        "комментарий",
+        "comment",
+        "text",
+    ])
+
+    col_location = find_col(df, [
+        "местонахождение",
+        "location",
+        "адрес",
+    ])
 
     tasks: List[Dict[str, Any]] = []
     invalid = 0
-    total = max(0, ws.max_row - 1)
 
-    for r in range(2, ws.max_row + 1):
-        portal_task_id = _s(ws.cell(r, header["Идентификатор Портала"]).value)
-        created_at = _s(ws.cell(r, header["Дата создания"]).value)
-        level4 = _s(ws.cell(r, header["Уровень 4"]).value)
-        text = _s(ws.cell(r, header["Текст обращения"]).value)
-        store_no = _s(ws.cell(r, header["Номер магазина"]).value)
+    for _, row in df.iterrows():
+        raw_store = row.get(col_store_no) if col_store_no else None
+        raw_portal = row.get(col_portal_id) if col_portal_id else None
 
-        comments = ""
-        if comments_col is not None:
-            comments = _s(ws.cell(r, comments_col).value)
+        store_no = None if pd.isna(raw_store) else str(raw_store).strip()
+        portal_task_id = None if pd.isna(raw_portal) else str(raw_portal).strip()
 
-        location = ""
-        if loc_col is not None:
-            location = _s(ws.cell(r, loc_col).value)
+        incident_type = None if not col_type or pd.isna(row.get(col_type)) else str(row.get(col_type)).strip()
+        text = None if not col_text or pd.isna(row.get(col_text)) else str(row.get(col_text)).strip()
+        status = None if not col_status or pd.isna(row.get(col_status)) else str(row.get(col_status)).strip()
+        sla_date = None if not col_sla or pd.isna(row.get(col_sla)) else str(row.get(col_sla)).strip()
+        created_at = None if not col_created or pd.isna(row.get(col_created)) else str(row.get(col_created)).strip()
+        location = None if not col_location or pd.isna(row.get(col_location)) else str(row.get(col_location)).strip()
 
-        sla_date = ""
-        if sla_col is not None:
-            raw = ws.cell(r, sla_col).value
-            if isinstance(raw, datetime):
-                sla_date = _s(raw)
-            else:
-                sraw = _s(raw)
-                sla_date = _parse_dt_str(sraw) or sraw
+        if store_no:
+            digits = "".join(ch for ch in store_no if ch.isdigit())
+            store_no = digits if digits else store_no
 
-        if not portal_task_id or not store_no:
+        if not store_no:
             invalid += 1
             continue
 
-        tasks.append(
-            {
-                "portal_task_id": portal_task_id,
-                "created_at": created_at or "—",
-                "level4": level4 or "—",
-                "text": text or "—",
-                "comments": comments or "—",
-                "store_no": store_no or "—",
-                "sla_date": sla_date or "—",
-                "location": location or "—",
-            }
-        )
+        task = {
+            "portal_task_id": portal_task_id or "",
+            "store_no": store_no,
+            "sla_date": sla_date,
+            "created_at": created_at,
+            "incident_type": incident_type,
+            "text": text,
+            "status": status,
+            "location": location,
+        }
 
-    return PortalL4ParseResult(tasks=tasks, invalid=invalid, total=total, headers=headers_list)
+        if not task["portal_task_id"]:
+            task["portal_task_id"] = make_portal_task_id(task)
 
+        tasks.append(task)
 
-# --- temp helper ---
-import tempfile, os
-
-def bytes_to_temp(b: bytes) -> str:
-    fd, path = tempfile.mkstemp(suffix=".xlsx")
-    os.close(fd)
-    with open(path, "wb") as f:
-        f.write(b)
-    return path
+    return ParseResult(
+        tasks=tasks,
+        total=len(df),
+        invalid=invalid,
+        headers=headers,
+    )

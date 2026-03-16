@@ -1,95 +1,88 @@
 function fmtDate(value) {
   if (!value) return "—";
-  return new Date(value).toLocaleString("ru-RU");
+  try {
+    return new Date(value).toLocaleString("ru-RU");
+  } catch {
+    return String(value);
+  }
 }
 
 function fmtPercent(value) {
   if (value == null) return "—";
-  return `${Number(value).toFixed(1)}%`;
+  const n = Number(value);
+  if (Number.isNaN(n)) return "—";
+  return `${n.toFixed(1)}%`;
 }
 
 function trustText(value) {
-  const trust = (value || "UNKNOWN").toUpperCase();
-  if (trust === "GREEN") return "GREEN";
-  if (trust === "YELLOW") return "YELLOW";
-  if (trust === "RED") return "RED";
+  const trust = String(value || "UNKNOWN").toUpperCase();
+  if (["GREEN", "YELLOW", "RED"].includes(trust)) return trust;
   return "UNKNOWN";
 }
 
-async function loadDirectorLanding() {
-  const resp = await fetch("/api/director/landing");
-  const payload = await resp.json();
-
-  if (payload.status !== "ok") {
-    document.getElementById("heroSubtitle").innerText = payload.error || "Ошибка загрузки директорского экрана";
-    return;
-  }
-
-  const data = payload.data || {};
-  const hero = data.hero || {};
-  const kpi = data.kpi || {};
-
-  document.getElementById("heroTitle").innerText = hero.title || "Директорский экран платформы";
-  document.getElementById("heroSubtitle").innerText = hero.subtitle || "—";
-
-  document.getElementById("kpiActive").innerText = kpi.active_tasks ?? "—";
-  document.getElementById("kpiOverdue").innerText = kpi.overdue_sla ?? "—";
-  document.getElementById("kpiAnomalies").innerText = kpi.pending_anomalies ?? "—";
-  document.getElementById("kpiTrust").innerText = trustText(kpi.trust_level);
-  document.getElementById("kpiImport").innerText = fmtDate(kpi.last_import_at);
-  document.getElementById("kpiInvalid").innerText = fmtPercent(kpi.invalid_ratio);
-
-  const platformValueBox = document.getElementById("platformValueBox");
-  platformValueBox.innerHTML = (data.platform_value || [])
-    .slice(0, 2)
-    .map(x => `<div class="hero-bullet">• ${x}</div>`)
-    .join("");
-
-  const modulesGrid = document.getElementById("modulesGrid");
-  modulesGrid.innerHTML = "";
-  (data.modules || []).forEach((item) => {
-    const statusClass =
-      item.status === "active" ? "module-active" :
-      item.status === "planned" ? "module-planned" : "module-neutral";
-
-    const href = item.route && item.route !== "#" ? item.route : "javascript:void(0)";
-    modulesGrid.insertAdjacentHTML(
-      "beforeend",
-      `
-      <a class="module-card ${statusClass}" href="${href}">
-        <div class="module-tag">${item.tag || "Модуль"}</div>
-        <div class="module-title">${item.title || "Модуль"}</div>
-        <div class="module-text">${item.description || ""}</div>
-      </a>
-      `
-    );
-  });
-
-  const roadmapBox = document.getElementById("roadmapBox");
-  roadmapBox.innerHTML = "";
-  (data.roadmap || []).forEach((row) => {
-    const cls = row.status === "done" ? "roadmap-done" : "roadmap-next";
-    roadmapBox.insertAdjacentHTML(
-      "beforeend",
-      `
-      <div class="roadmap-item ${cls}">
-        <div class="roadmap-stage">${row.stage}</div>
-        <div class="roadmap-title">${row.title}</div>
-      </div>
-      `
-    );
-  });
-
-  const valueList = document.getElementById("valueList");
-  valueList.innerHTML = "";
-  (data.platform_value || []).forEach((row) => {
-    valueList.insertAdjacentHTML(
-      "beforeend",
-      `<div class="value-item">• ${row}</div>`
-    );
-  });
+function safeSetText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.innerText = value ?? "—";
 }
 
-loadDirectorLanding().catch((e) => {
-  document.getElementById("heroSubtitle").innerText = e.message || "Непредвиденная ошибка";
-});
+function safeSetHTML(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = value ?? "";
+}
+
+async function loadDirectorLanding() {
+  try {
+    const resp = await fetch("/api/director/landing", { credentials: "same-origin" });
+    const payload = await resp.json();
+
+    if (payload.status !== "ok") {
+      safeSetText("heroSubtitle", payload.error || "Ошибка загрузки командного центра");
+      return;
+    }
+
+    const data = payload.data || {};
+    const hero = data.hero || {};
+    const kpi = data.kpi || {};
+    const platformValue = Array.isArray(data.platform_value) ? data.platform_value : [];
+    const roadmap = Array.isArray(data.roadmap) ? data.roadmap : [];
+
+    safeSetText("heroSubtitle", hero.subtitle || "Единая точка входа для контроля задач и рисков.");
+    safeSetText("kpiTasks", kpi.active_tasks ?? "—");
+    safeSetText("kpiOverdue", kpi.overdue_sla ?? "—");
+    safeSetText("kpiAnomalies", kpi.pending_anomalies ?? "—");
+    safeSetText("kpiTrust", trustText(kpi.trust_level));
+    safeSetText("kpiImport", fmtDate(kpi.last_import_at));
+    safeSetText("kpiInvalid", fmtPercent(kpi.invalid_ratio));
+
+    safeSetHTML(
+      "effectBox",
+      platformValue.length
+        ? platformValue.slice(0, 2).map(x => `<div class="value-item">• ${x}</div>`).join("")
+        : "Нет данных"
+    );
+
+    safeSetHTML(
+      "roadmapBox",
+      roadmap.length
+        ? roadmap.map(x => `
+            <div class="value-item">
+              <strong>${x.stage || "Stage"}</strong> — ${x.title || "—"}
+            </div>
+          `).join("")
+        : "Нет roadmap данных"
+    );
+
+    safeSetHTML(
+      "leaderBox",
+      platformValue.length
+        ? platformValue.map(x => `<div class="value-item">• ${x}</div>`).join("")
+        : "Нет данных"
+    );
+
+  } catch (e) {
+    safeSetText("heroSubtitle", e.message || "Непредвиденная ошибка");
+    console.error(e);
+  }
+}
+
+window.addEventListener("load", loadDirectorLanding);

@@ -1,338 +1,353 @@
 from __future__ import annotations
 
+import os
+import json
 import hashlib
-import io
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime
+from typing import Any, Dict, Optional
 
-from openpyxl import load_workbook
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+import asyncpg
 
-from app.models import (
-    Anomaly, AnomalySeverity, AnomalyStatus
+from app.services.portal_l4_parser import parse_portal_l4_xlsx
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+DSN = (
+    DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    .replace("postgres+asyncpg://", "postgres://")
 )
 
-STATUS_WHITELIST = {"new", "in_progress", "done", "closed", "open"}
-SLA_HOURS = {"critical": 24, "major": 72, "minor": 24 * 7}
+DEFAULT_PROFILE_ID = "portal_l4"
 
 
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def _sha256_bytes(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
 
 
-def _due(sev: AnomalySeverity) -> datetime:
-    return datetime.utcnow() + timedelta(hours=SLA_HOURS[sev.value])
-
-
-def _severity_for(anomaly_type: str) -> AnomalySeverity:
-    if anomaly_type in ("UNKNOWN_SHEET", "COVERAGE_DROP"):
-        return AnomalySeverity.major
-    if anomaly_type in ("MISSING_MANAGER", "STORE_CHANGED", "CONFLICTING_ROWS"):
-        return AnomalySeverity.major
-    if anomaly_type in ("INVALID_RATIO_HIGH",):
-        return AnomalySeverity.minor
-    return AnomalySeverity.minor
-
-
-async def create_anomaly(
-    db: AsyncSession,
-    anomaly_type: str,
-    details: dict[str, Any],
-    related_upload_id=None,
-    related_task_id=None,
-) -> None:
-    sev = _severity_for(anomaly_type)
-    db.add(
-        Anomaly(
-            anomaly_type=anomaly_type,
-            severity=sev,
-            status=AnomalyStatus.open,
-            related_upload_id=related_upload_id,
-            related_task_id=related_task_id,
-            details=details,
-            due_at=_due(sev),
-        )
-    )
-
-
-def _norm(h: Any) -> str:
-    return str(h).strip().lower().replace(" ", "_")
-
-
-def _pick_sheet(wb):
-    if "tasks" in wb.sheetnames:
-        return wb["tasks"]
-    return wb[wb.sheetnames[0]]
-
-
-def _parse_rows(file_bytes: bytes) -> tuple[list[dict[str, Any]], list[str]]:
-    wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
-    ws = _pick_sheet(wb)
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows or len(rows) < 2:
-        return [], ["EMPTY_SHEET"]
-
-    header = [_norm(x) for x in rows[0]]
-    required = {"portal_task_id", "store_no", "status"}
-    if not required.issubset(set(header)):
-        return [], ["UNKNOWN_SHEET"]
-
-    idx = {h: i for i, h in enumerate(header) if h}
-    out: list[dict[str, Any]] = []
-    for rn, r in enumerate(rows[1:], start=2):  # excel row number
-        def get(col: str):
-            i = idx.get(col)
-            return None if i is None else r[i]
-        out.append(
-            {
-                "row_number": rn,
-                "portal_task_id": (str(get("portal_task_id")).strip() if get("portal_task_id") is not None else None),
-                "store_no": (str(get("store_no")).strip() if get("store_no") is not None else None),
-                "status": (str(get("status")).strip().lower() if get("status") is not None else None),
-                "sla": (str(get("sla")).strip().lower() if get("sla") is not None else None),
-                "raw": {h: (r[idx[h]] if h in idx else None) for h in idx.keys()},
-            }
-        )
-    return out, []
-
-
-async def _baseline_seen(db: AsyncSession, profile_id: str) -> float | None:
-    res = await db.execute(
-        select(Upload.seen_tasks_count)
-        .where(Upload.profile_id == profile_id)
-        .order_by(Upload.uploaded_at.desc())
-        .limit(3)
-    )
-    vals = [v for (v,) in res.all()]
-    if not vals:
+def _to_dt(value: Any) -> Optional[datetime]:
+    if value is None:
         return None
-    return sum(vals) / len(vals)
+
+    if isinstance(value, datetime):
+        return value
+
+    s = str(value).strip()
+    if not s or s == "—" or s.lower() == "nan":
+        return None
+
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        pass
+
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d",
+        "%d.%m.%Y %H:%M:%S",
+        "%d.%m.%Y %H:%M",
+        "%d.%m.%Y",
+        "%d-%m-%Y %H:%M:%S",
+        "%d-%m-%Y %H:%M",
+        "%d-%m-%Y",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            continue
+
+    return None
 
 
-def _coverage_drop(seen: int, baseline: float | None) -> tuple[bool, int | None, float | None]:
-    if baseline is None or baseline <= 0:
-        return False, None, None
-    abs_drop = int(round(baseline - seen))
-    rel_drop = (baseline - seen) / baseline if baseline else 0.0
-
-    # thresholds
-    if baseline < 10:
-        abs_threshold = 3
-        rel_threshold = 0.50
-    else:
-        abs_threshold = max(5, int(0.15 * baseline))
-        rel_threshold = 0.30
-
-    drop = (abs_drop >= abs_threshold) and (rel_drop >= rel_threshold)
-    return drop, abs_drop, rel_drop
-
-
-async def compute_trust(db: AsyncSession) -> dict[str, Any]:
-    reasons: list[str] = []
-    trust = "GREEN"
-
-    last = await db.execute(select(func.max(Upload.uploaded_at)))
-    last_import_at = last.scalar_one_or_none()
-
-    if last_import_at is None:
-        trust = "RED"
-        reasons.append("no_import_yet")
-    else:
-        hours = (datetime.utcnow() - last_import_at.replace(tzinfo=None)).total_seconds() / 3600.0
-        if hours > 48:
-            trust = "RED"
-            reasons.append("no_import_over_48h")
-
-    # open critical anomalies -> RED
-    crit = await db.execute(
-        select(func.count(Anomaly.id))
-        .where(Anomaly.status == AnomalyStatus.open)
-        .where(Anomaly.severity == AnomalySeverity.critical)
+async def _get_store_id_by_store_no(conn: asyncpg.Connection, store_no: str):
+    row = await conn.fetchrow(
+        """
+        SELECT id
+        FROM stores
+        WHERE store_no = $1
+        LIMIT 1
+        """,
+        store_no,
     )
-    if (crit.scalar_one() or 0) > 0:
-        trust = "RED"
-        reasons.append("critical_anomaly_open")
-
-    # coverage drop on latest upload -> YELLOW (unless already RED)
-    cov = await db.execute(
-        select(UploadMetrics.coverage_drop, Upload.invalid_ratio)
-        .join(Upload, Upload.id == UploadMetrics.upload_id)
-        .order_by(Upload.uploaded_at.desc())
-        .limit(1)
-    )
-    row = cov.first()
-    coverage_drop = None
-    invalid_ratio = None
-    if row:
-        coverage_drop = bool(row[0])
-        invalid_ratio = float(row[1])
-        if trust != "RED" and coverage_drop:
-            trust = "YELLOW"
-            reasons.append("coverage_drop")
-        if trust != "RED" and invalid_ratio > 0.20:
-            trust = "YELLOW"
-            reasons.append("invalid_ratio_over_20")
-
-    pending = await db.execute(select(func.count(Anomaly.id)).where(Anomaly.status == AnomalyStatus.open))
-    return {
-        "trust_level": trust,
-        "reasons": reasons,
-        "last_import_at": last_import_at,
-        "invalid_ratio": invalid_ratio,
-        "coverage_drop": coverage_drop,
-        "pending_anomalies": int(pending.scalar_one() or 0),
-    }
+    return row["id"] if row else None
 
 
-async def import_xlsx_soft(db: AsyncSession, file_name: str, file_bytes: bytes, profile_id: str) -> dict[str, Any]:
-    file_hash = sha256_bytes(file_bytes)
+async def process_excel_upload(content: bytes, filename: str = "ui_upload.xlsx") -> Dict[str, Any]:
+    if not content:
+        raise ValueError("empty upload content")
 
-    # idempotency
-    existing = await db.execute(select(Upload).where(Upload.file_hash == file_hash))
-    ex = existing.scalar_one_or_none()
-    if ex:
-        trust = await compute_trust(db)
-        return {"upload": ex, "anomalies_created": 0, "idempotent": True, "trust": trust}
+    if not DSN:
+        raise RuntimeError("DATABASE_URL is empty")
 
-    parsed_rows, parse_errs = _parse_rows(file_bytes)
-    upload = Upload(file_name=file_name, file_hash=file_hash, profile_id=profile_id)
-    db.add(upload)
-    await db.flush()
+    parsed = parse_portal_l4_xlsx(content)
+    file_hash = _sha256_bytes(content)
 
-    anomalies_created = 0
-    created_tasks = 0
-    updated_tasks = 0
-    if parse_errs:
-        await create_anomaly(db, "UNKNOWN_SHEET", {"errors": parse_errs}, related_upload_id=upload.id)
-        anomalies_created += 1
-        upload.total_rows = 0
-        upload.valid_rows = 0
-        upload.invalid_rows = 0
-        upload.invalid_ratio = 1.0
-        upload.seen_tasks_count = 0
-        # still write metrics row
-        db.add(UploadMetrics(upload_id=upload.id, baseline_seen=None, abs_drop=None, rel_drop=None, coverage_drop=False))
-        await db.commit()
-        trust = await compute_trust(db)
-        return {"upload": upload, "anomalies_created": anomalies_created, "idempotent": False, "trust": trust, "created_tasks": created_tasks, "updated_tasks": updated_tasks}
+    total_rows = int(parsed.total or 0)
+    parser_invalid_rows = int(parsed.invalid or 0)
 
-    upload.total_rows = len(parsed_rows)
+    conn = await asyncpg.connect(DSN)
 
-    seen_portal_ids: set[str] = set()
-    store_map: dict[str, Store] = {}
-    # prefetch stores by store_no present
-    store_nos = sorted({r["store_no"] for r in parsed_rows if r.get("store_no")})
-    if store_nos:
-        res = await db.execute(select(Store).where(Store.store_no.in_(store_nos)))
-        for s in res.scalars().all():
-            store_map[s.store_no] = s
+    try:
+        existing_upload_id = await conn.fetchval(
+            """
+            SELECT id
+            FROM uploads
+            WHERE file_hash = $1
+              AND profile_id = $2
+            LIMIT 1
+            """,
+            file_hash,
+            DEFAULT_PROFILE_ID,
+        )
 
-    # detect conflicting portal_task_id mapping to different store_no in same upload
-    by_pt: dict[str, set[str]] = {}
-    for r in parsed_rows:
-        pt = r.get("portal_task_id")
-        sn = r.get("store_no")
-        if pt and sn:
-            by_pt.setdefault(pt, set()).add(sn)
-    conflicted = {pt: sorted(list(sns)) for pt, sns in by_pt.items() if len(sns) > 1}
-    if conflicted:
-        await create_anomaly(db, "CONFLICTING_ROWS", {"conflicts": conflicted}, related_upload_id=upload.id)
-        anomalies_created += 1
+        if existing_upload_id:
+            return {
+                "status": "ok",
+                "idempotent": True,
+                "upload_id": str(existing_upload_id),
+                "total_rows": total_rows,
+                "valid_rows": 0,
+                "invalid_rows": parser_invalid_rows,
+                "seen_tasks_count": 0,
+                "tasks_inserted": 0,
+                "tasks_updated": 0,
+                "tasks_skipped": 0,
+            }
 
-    valid_rows = 0
-    invalid_rows = 0
+        upload_id = await conn.fetchval(
+            """
+            INSERT INTO uploads
+            (
+                file_name,
+                file_hash,
+                profile_id,
+                uploaded_at,
+                total_rows,
+                valid_rows,
+                invalid_rows,
+                invalid_ratio,
+                seen_tasks_count,
+                meta
+            )
+            VALUES
+            (
+                $1,
+                $2,
+                $3,
+                now(),
+                $4,
+                0,
+                0,
+                0,
+                0,
+                $5::jsonb
+            )
+            RETURNING id
+            """,
+            filename,
+            file_hash,
+            DEFAULT_PROFILE_ID,
+            total_rows,
+            json.dumps({"headers": getattr(parsed, "headers", [])}, ensure_ascii=False),
+        )
 
-    # stage + validate
-    for r in parsed_rows:
-        err = None
-        pt = r.get("portal_task_id")
-        sn = r.get("store_no")
-        st = r.get("status")
-        sla = r.get("sla")
+        inserted = 0
+        updated = 0
+        skipped = 0
+        valid_rows = 0
+        import_error_rows = 0
 
-        if not pt:
-            err = "MISSING_PORTAL_TASK_ID"
-        elif not sn:
-            err = "MISSING_STORE_NO"
-        elif st not in STATUS_WHITELIST:
-            err = "INVALID_STATUS"
-        elif sn not in store_map:
-            err = "STORE_NOT_FOUND"
-        else:
-            store = store_map[sn]
-            if store.assigned_user_id is None:
-                # dispatcher should assign later
-                await create_anomaly(db, "MISSING_MANAGER", {"store_no": sn}, related_upload_id=upload.id)
-                anomalies_created += 1
+        for idx, task in enumerate(parsed.tasks, start=1):
+            try:
+                portal_task_id = str(task.get("portal_task_id") or "").strip()
+                store_no = str(task.get("store_no") or "").strip()
 
-            upload_id=upload.id,
-            row_number=int(r["row_number"]),
-            portal_task_id=pt,
-            store_no=sn,
-            status=st,
-            sla=sla,
-            raw_row=r.get("raw") or {},
-            validation_error=err,
-        ))
+                if not portal_task_id:
+                    import_error_rows += 1
+                    await conn.execute(
+                        """
+                        INSERT INTO import_errors (upload_id, row_number, error, raw, created_at)
+                        VALUES ($1, $2, $3, $4::jsonb, now())
+                        """,
+                        upload_id,
+                        idx,
+                        "portal_task_id is empty",
+                        json.dumps(task, ensure_ascii=False),
+                    )
+                    continue
 
-        if err:
-            invalid_rows += 1
-            db.add(ImportError(upload_id=upload.id, row_number=int(r["row_number"]), error_code=err, details={"row": r.get("raw") or {}}))
-        else:
-            valid_rows += 1
-            seen_portal_ids.add(pt)
+                if not store_no:
+                    import_error_rows += 1
+                    await conn.execute(
+                        """
+                        INSERT INTO import_errors (upload_id, row_number, error, raw, created_at)
+                        VALUES ($1, $2, $3, $4::jsonb, now())
+                        """,
+                        upload_id,
+                        idx,
+                        "store_no is empty",
+                        json.dumps(task, ensure_ascii=False),
+                    )
+                    continue
 
-    upload.valid_rows = valid_rows
-    upload.invalid_rows = invalid_rows
-    upload.invalid_ratio = (invalid_rows / upload.total_rows) if upload.total_rows else 0.0
-    upload.seen_tasks_count = len(seen_portal_ids)
+                store_id = await _get_store_id_by_store_no(conn, store_no)
+                if not store_id:
+                    skipped += 1
+                    import_error_rows += 1
+                    await conn.execute(
+                        """
+                        INSERT INTO import_errors (upload_id, row_number, error, raw, created_at)
+                        VALUES ($1, $2, $3, $4::jsonb, now())
+                        """,
+                        upload_id,
+                        idx,
+                        f"store not found: {store_no}",
+                        json.dumps(task, ensure_ascii=False),
+                    )
+                    continue
 
-    # commit valid tasks (upsert-ish)
-    now = datetime.utcnow()
-    for pt in seen_portal_ids:
-        # pick first staging row for pt
-        r = next(x for x in parsed_rows if x.get("portal_task_id") == pt)
-        sn = r["store_no"]
-        store = store_map[sn]
-        status = r["status"]
-        sla = r.get("sla")
+                sla_due_at = _to_dt(task.get("sla_date"))
+                payload = json.dumps(task, ensure_ascii=False)
 
-        q = await db.execute(select(Task).where(Task.portal_task_id == pt))
-        task = q.scalar_one_or_none()
-        if task is None:
-            task = Task(portal_task_id=pt, store_id=store.id, status=status, sla=sla, last_seen_at=now, created_at=now)
-            db.add(task)
-            created_tasks += 1
-        else:
-            changed = (task.status != status) or (task.sla != sla) or (task.store_id != store.id)
-            if changed:
-                updated_tasks += 1
+                existing_task_id = await conn.fetchval(
+                    """
+                    SELECT id
+                    FROM tasks
+                    WHERE portal_task_id = $1
+                    LIMIT 1
+                    """,
+                    portal_task_id,
+                )
 
-            # store changed anomaly
-            if task.store_id != store.id:
-                await create_anomaly(db, "STORE_CHANGED", {"portal_task_id": pt, "from_store_id": str(task.store_id), "to_store_id": str(store.id)}, related_upload_id=upload.id, related_task_id=task.id)
-                anomalies_created += 1
-                task.store_id = store.id
-            task.status = status
-            task.sla = sla
-            task.last_seen_at = now
+                if existing_task_id:
+                    await conn.execute(
+                        """
+                        UPDATE tasks
+                        SET
+                            store_id = $2,
+                            status = 'open',
+                            sla_due_at = COALESCE($3::timestamptz, sla_due_at),
+                            last_seen_at = now(),
+                            payload = $4::jsonb,
+                            upload_id = $5,
+                            updated_at = now()
+                        WHERE portal_task_id = $1
+                        """,
+                        portal_task_id,
+                        store_id,
+                        sla_due_at,
+                        payload,
+                        upload_id,
+                    )
+                    updated += 1
+                else:
+                    await conn.execute(
+                        """
+                        INSERT INTO tasks
+                        (
+                            portal_task_id,
+                            store_id,
+                            status,
+                            sla_due_at,
+                            last_seen_at,
+                            payload,
+                            upload_id,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES
+                        (
+                            $1,
+                            $2,
+                            'open',
+                            $3::timestamptz,
+                            now(),
+                            $4::jsonb,
+                            $5,
+                            now(),
+                            now()
+                        )
+                        """,
+                        portal_task_id,
+                        store_id,
+                        sla_due_at,
+                        payload,
+                        upload_id,
+                    )
+                    inserted += 1
 
-    # metrics baseline/drop
-    baseline = await _baseline_seen(db, profile_id)
-    drop, abs_drop, rel_drop = _coverage_drop(upload.seen_tasks_count, baseline)
-    db.add(UploadMetrics(upload_id=upload.id, baseline_seen=baseline, abs_drop=abs_drop, rel_drop=rel_drop, coverage_drop=drop))
+                valid_rows += 1
 
-    if upload.invalid_ratio > 0.20:
-        await create_anomaly(db, "INVALID_RATIO_HIGH", {"invalid_ratio": upload.invalid_ratio}, related_upload_id=upload.id)
-        anomalies_created += 1
+            except Exception as row_error:
+                import_error_rows += 1
+                await conn.execute(
+                    """
+                    INSERT INTO import_errors (upload_id, row_number, error, raw, created_at)
+                    VALUES ($1, $2, $3, $4::jsonb, now())
+                    """,
+                    upload_id,
+                    idx,
+                    str(row_error),
+                    json.dumps(task, ensure_ascii=False),
+                )
 
-    if drop:
-        await create_anomaly(db, "COVERAGE_DROP", {"baseline": baseline, "seen": upload.seen_tasks_count, "abs_drop": abs_drop, "rel_drop": rel_drop}, related_upload_id=upload.id)
-        anomalies_created += 1
+        invalid_rows = parser_invalid_rows + import_error_rows + skipped
+        seen_tasks_count = inserted + updated
+        invalid_ratio = (invalid_rows / total_rows) if total_rows else 0
 
-    await db.commit()
-    await db.refresh(upload)
+        await conn.execute(
+            """
+            UPDATE uploads
+            SET
+                valid_rows = $2,
+                invalid_rows = $3,
+                invalid_ratio = $4,
+                seen_tasks_count = $5
+            WHERE id = $1
+            """,
+            upload_id,
+            valid_rows,
+            invalid_rows,
+            invalid_ratio,
+            seen_tasks_count,
+        )
 
-    trust = await compute_trust(db)
-    return {"upload": upload, "anomalies_created": anomalies_created, "idempotent": False, "trust": trust, "created_tasks": created_tasks, "updated_tasks": updated_tasks}
+        await conn.execute(
+            """
+            INSERT INTO upload_metrics
+            (
+                upload_id,
+                baseline_seen,
+                abs_drop,
+                rel_drop,
+                coverage_drop,
+                created_at
+            )
+            VALUES
+            (
+                $1,
+                NULL,
+                NULL,
+                NULL,
+                FALSE,
+                now()
+            )
+            ON CONFLICT (upload_id) DO NOTHING
+            """,
+            upload_id,
+        )
+
+        return {
+            "status": "ok",
+            "idempotent": False,
+            "upload_id": str(upload_id),
+            "total_rows": total_rows,
+            "valid_rows": valid_rows,
+            "invalid_rows": invalid_rows,
+            "seen_tasks_count": seen_tasks_count,
+            "tasks_inserted": inserted,
+            "tasks_updated": updated,
+            "tasks_skipped": skipped,
+        }
+
+    finally:
+        await conn.close()

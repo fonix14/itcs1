@@ -405,3 +405,70 @@ h1 {
     align-items: flex-start;
   }
 }
+
+/* ===== FINAL DIRECTOR DASHBOARD COMPACT OVERRIDE ===== */
+body {
+  font-size: 13px !important;
+}
+
+h1,
+.page-title,
+.hero-title,
+.dd-page-title {
+  font-size: 26px !important;
+  line-height: 1.08 !important;
+  letter-spacing: -0.01em !important;
+}
+
+h2,
+.section-title,
+.dd-section-title,
+.card-title,
+.panel-title {
+  font-size: 15px !important;
+  line-height: 1.12 !important;
+}
+
+.dd-kpi-value,
+.risk-metric-value,
+.metric-value,
+.stat-value,
+.big-number,
+.dashboard-number,
+.value-xl {
+  font-size: 14px !important;
+  line-height: 1.05 !important;
+  font-weight: 700 !important;
+}
+
+.dd-kpi-label,
+.dd-muted,
+.label,
+.meta,
+small,
+th,
+td {
+  font-size: 11px !important;
+}
+
+button,
+input,
+select,
+textarea,
+.btn {
+  font-size: 12px !important;
+}
+
+table th,
+table td,
+.dd-table th,
+.dd-table td {
+  font-size: 11px !important;
+}
+
+.card,
+.panel,
+.metric,
+.kpi {
+  padding: 14px !important;
+}

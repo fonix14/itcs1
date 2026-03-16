@@ -5,6 +5,7 @@ import os
 
 import httpx
 from fastapi import APIRouter, File, UploadFile
+from app.importer.service import process_excel_upload
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 router = APIRouter()
@@ -122,3 +123,17 @@ async def upload_submit(file: UploadFile = File(...)):
     <a class="btn2" href="/ui/upload">Загрузить ещё</a>
     <a class="btn" href="/ui/director">Вернуться в центр</a>
     """ + HTML_FOOT
+
+from fastapi import UploadFile, File
+from fastapi.responses import RedirectResponse
+
+@router.post("/upload_excel")
+async def upload_excel(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        await process_excel_upload(content)
+    except Exception as e:
+        print("IMPORT ERROR:", e)
+
+    return RedirectResponse("/ui/ops", status_code=303)
+

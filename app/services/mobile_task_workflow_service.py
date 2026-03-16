@@ -111,11 +111,11 @@ async def accept_task(task_id: str, actor_user_id: str, actor_role: str):
             text(
                 """
                 insert into task_internal_state (task_id, internal_status, accepted_at, accepted_by)
-                values (:task_id, 'accepted', now(), :actor_user_id::uuid)
+                values (:task_id, 'accepted', now(), cast(:actor_user_id as uuid))
                 on conflict (task_id) do update
                 set internal_status = 'accepted',
                     accepted_at = now(),
-                    accepted_by = :actor_user_id::uuid
+                    accepted_by = cast(:actor_user_id as uuid)
                 """
             ),
             {"task_id": task_id, "actor_user_id": actor_user_id},
@@ -143,7 +143,7 @@ async def add_comment(task_id: str, comment: str, actor_user_id: str, actor_role
             text(
                 """
                 insert into task_comments (id, task_id, created_by, comment_text, created_at)
-                values (gen_random_uuid(), :task_id, :actor_user_id::uuid, :comment, now())
+                values (gen_random_uuid(), :task_id, cast(:actor_user_id as uuid), :comment, now())
                 """
             ),
             {"task_id": task_id, "actor_user_id": actor_user_id, "comment": comment},
@@ -173,11 +173,11 @@ async def close_task(task_id: str, comment: str | None, actor_user_id: str, acto
                 insert into task_internal_state
                     (task_id, internal_status, closed_at, closed_by, manager_comment)
                 values
-                    (:task_id, 'closed', now(), :actor_user_id::uuid, :comment)
+                    (:task_id, 'resolved', now(), cast(:actor_user_id as uuid), :comment)
                 on conflict (task_id) do update
-                set internal_status = 'closed',
+                set internal_status = 'resolved',
                     closed_at = now(),
-                    closed_by = :actor_user_id::uuid,
+                    closed_by = cast(:actor_user_id as uuid),
                     manager_comment = coalesce(:comment, task_internal_state.manager_comment)
                 """
             ),
@@ -195,4 +195,4 @@ async def close_task(task_id: str, comment: str | None, actor_user_id: str, acto
         )
 
         await session.commit()
-        return {"closed": True, "task_id": task_id}
+        return {"resolved": True, "task_id": task_id}

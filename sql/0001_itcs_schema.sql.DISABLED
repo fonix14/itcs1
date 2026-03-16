@@ -1,0 +1,426 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('dispatcher', 'manager');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
+        CREATE TYPE task_status AS ENUM ('open', 'in_progress', 'resolved', 'cancelled');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'anomaly_status') THEN
+        CREATE TYPE anomaly_status AS ENUM ('open', 'in_progress', 'resolved');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'anomaly_severity') THEN
+        CREATE TYPE anomaly_severity AS ENUM ('low', 'medium', 'high', 'critical');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'outbox_status') THEN
+        CREATE TYPE outbox_status AS ENUM ('pending', 'processing', 'sent', 'dead');
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'trust_level') THEN
+        CREATE TYPE trust_level AS ENUM ('GREEN', 'YELLOW', 'RED');
+    END IF;
+END
+$$;
+
+CREATE TABLE IF NOT EXISTS users (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    email text UNIQUE,
+    full_name text NOT NULL,
+    role user_role NOT NULL,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
+
+CREATE TABLE IF NOT EXISTS stores (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    store_no text NOT NULL UNIQUE,
+    name text,
+    address text,
+    assigned_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stores_assigned_user_id ON stores(assigned_user_id);
+CREATE INDEX IF NOT EXISTS idx_stores_active ON stores(is_active);
+
+CREATE TABLE IF NOT EXISTS uploads (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_name text NOT NULL,
+    file_hash text,
+    profile_id text NOT NULL DEFAULT 'portal_l4',
+    uploaded_at timestamptz NOT NULL DEFAULT now(),
+    total_rows integer NOT NULL DEFAULT 0,
+    valid_rows integer NOT NULL DEFAULT 0,
+    invalid_rows integer NOT NULL DEFAULT 0,
+    invalid_ratio numeric(10,4) NOT NULL DEFAULT 0,
+    seen_tasks_count integer NOT NULL DEFAULT 0,
+    meta jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploads_uploaded_at ON uploads(uploaded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_uploads_profile_id ON uploads(profile_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_uploads_file_hash_profile
+    ON uploads(file_hash, profile_id)
+    WHERE file_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    portal_task_id text NOT NULL UNIQUE,
+    store_id uuid NOT NULL REFERENCES stores(id) ON DELETE RESTRICT,
+    status task_status NOT NULL DEFAULT 'open',
+    sla_due_at timestamptz,
+    last_seen_at timestamptz,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    upload_id uuid REFERENCES uploads(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_store_id ON tasks(store_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_sla_due_at ON tasks(sla_due_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_last_seen_at ON tasks(last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_upload_id ON tasks(upload_id);
+
+CREATE TABLE IF NOT EXISTS task_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    event_type text NOT NULL,
+    event_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_events_task_id ON task_events(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_events_created_at ON task_events(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS import_errors (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_id uuid REFERENCES uploads(id) ON DELETE CASCADE,
+    row_number integer,
+    error text NOT NULL,
+    raw jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_import_errors_upload_id ON import_errors(upload_id);
+CREATE INDEX IF NOT EXISTS idx_import_errors_created_at ON import_errors(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS anomalies (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_id uuid REFERENCES uploads(id) ON DELETE SET NULL,
+    task_id uuid REFERENCES tasks(id) ON DELETE SET NULL,
+    store_id uuid REFERENCES stores(id) ON DELETE SET NULL,
+    type text NOT NULL,
+    severity anomaly_severity NOT NULL,
+    description text,
+    status anomaly_status NOT NULL DEFAULT 'open',
+    due_at timestamptz,
+    meta jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    resolved_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS idx_anomalies_status ON anomalies(status);
+CREATE INDEX IF NOT EXISTS idx_anomalies_severity ON anomalies(severity);
+CREATE INDEX IF NOT EXISTS idx_anomalies_due_at ON anomalies(due_at);
+CREATE INDEX IF NOT EXISTS idx_anomalies_created_at ON anomalies(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_anomalies_task_id ON anomalies(task_id);
+CREATE INDEX IF NOT EXISTS idx_anomalies_upload_id ON anomalies(upload_id);
+
+CREATE TABLE IF NOT EXISTS upload_metrics (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_id uuid NOT NULL UNIQUE REFERENCES uploads(id) ON DELETE CASCADE,
+    baseline_seen integer,
+    abs_drop integer,
+    rel_drop numeric(10,2),
+    coverage_drop boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_metrics_created_at ON upload_metrics(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS notification_outbox (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id uuid REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id uuid REFERENCES users(id) ON DELETE CASCADE,
+    template text NOT NULL,
+    channel text NOT NULL DEFAULT 'webpush',
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status outbox_status NOT NULL DEFAULT 'pending',
+    attempts integer NOT NULL DEFAULT 0,
+    max_attempts integer NOT NULL DEFAULT 3,
+    locked_at timestamptz,
+    sent_at timestamptz,
+    error text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_outbox_status ON notification_outbox(status);
+CREATE INDEX IF NOT EXISTS idx_notification_outbox_created_at ON notification_outbox(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_outbox_locked_at ON notification_outbox(locked_at);
+CREATE INDEX IF NOT EXISTS idx_notification_outbox_task_id ON notification_outbox(task_id);
+CREATE INDEX IF NOT EXISTS idx_notification_outbox_user_id ON notification_outbox(user_id);
+
+CREATE TABLE IF NOT EXISTS task_internal_state (
+    task_id uuid PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    accepted_at timestamptz,
+    accepted_by uuid REFERENCES users(id) ON DELETE SET NULL,
+    comment text,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_internal_state_updated_at ON task_internal_state(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS device_subscriptions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint text NOT NULL,
+    p256dh text,
+    auth text,
+    is_active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_subscriptions_user_id ON device_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_device_subscriptions_active ON device_subscriptions(is_active);
+
+CREATE TABLE IF NOT EXISTS health_snapshots (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    trust_level trust_level NOT NULL,
+    last_import_at timestamptz,
+    invalid_ratio numeric(10,4),
+    pending_anomalies integer NOT NULL DEFAULT 0,
+    overdue_critical_anomalies integer NOT NULL DEFAULT 0,
+    overdue_tasks integer NOT NULL DEFAULT 0,
+    no_import_hours integer NOT NULL DEFAULT 0,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_snapshots_created_at ON health_snapshots(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS sla_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id uuid NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    event_type text NOT NULL,
+    details jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sla_events_task_id ON sla_events(task_id);
+CREATE INDEX IF NOT EXISTS idx_sla_events_created_at ON sla_events(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS system_metrics (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    metric text NOT NULL,
+    value numeric,
+    payload jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_metrics_metric ON system_metrics(metric);
+CREATE INDEX IF NOT EXISTS idx_system_metrics_created_at ON system_metrics(created_at DESC);
+
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS trigger AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
+CREATE TRIGGER trg_users_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_stores_updated_at ON stores;
+CREATE TRIGGER trg_stores_updated_at
+BEFORE UPDATE ON stores
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tasks_updated_at ON tasks;
+CREATE TRIGGER trg_tasks_updated_at
+BEFORE UPDATE ON tasks
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_anomalies_updated_at ON anomalies;
+CREATE TRIGGER trg_anomalies_updated_at
+BEFORE UPDATE ON anomalies
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_notification_outbox_updated_at ON notification_outbox;
+CREATE TRIGGER trg_notification_outbox_updated_at
+BEFORE UPDATE ON notification_outbox
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_device_subscriptions_updated_at ON device_subscriptions;
+CREATE TRIGGER trg_device_subscriptions_updated_at
+BEFORE UPDATE ON device_subscriptions
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_task_internal_state_updated_at ON task_internal_state;
+CREATE TRIGGER trg_task_internal_state_updated_at
+BEFORE UPDATE ON task_internal_state
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_internal_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'users' AND policyname = 'users_dispatcher_all'
+    ) THEN
+        CREATE POLICY users_dispatcher_all ON users
+        USING (current_setting('app.current_user_role', true) = 'dispatcher')
+        WITH CHECK (current_setting('app.current_user_role', true) = 'dispatcher');
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'users' AND policyname = 'users_self_or_dispatcher'
+    ) THEN
+        CREATE POLICY users_self_or_dispatcher ON users
+        USING (
+            current_setting('app.current_user_role', true) = 'dispatcher'
+            OR id::text = current_setting('app.current_user_id', true)
+        )
+        WITH CHECK (
+            current_setting('app.current_user_role', true) = 'dispatcher'
+            OR id::text = current_setting('app.current_user_id', true)
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'stores' AND policyname = 'stores_dispatcher_all'
+    ) THEN
+        CREATE POLICY stores_dispatcher_all ON stores
+        USING (current_setting('app.current_user_role', true) = 'dispatcher')
+        WITH CHECK (current_setting('app.current_user_role', true) = 'dispatcher');
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'stores' AND policyname = 'stores_manager_assigned'
+    ) THEN
+        CREATE POLICY stores_manager_assigned ON stores
+        USING (
+            current_setting('app.current_user_role', true) = 'manager'
+            AND assigned_user_id::text = current_setting('app.current_user_id', true)
+        )
+        WITH CHECK (
+            current_setting('app.current_user_role', true) = 'manager'
+            AND assigned_user_id::text = current_setting('app.current_user_id', true)
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'tasks' AND policyname = 'tasks_dispatcher_all'
+    ) THEN
+        CREATE POLICY tasks_dispatcher_all ON tasks
+        USING (current_setting('app.current_user_role', true) = 'dispatcher')
+        WITH CHECK (current_setting('app.current_user_role', true) = 'dispatcher');
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'tasks' AND policyname = 'tasks_manager_only_own'
+    ) THEN
+        CREATE POLICY tasks_manager_only_own ON tasks
+        USING (
+            current_setting('app.current_user_role', true) = 'manager'
+            AND EXISTS (
+                SELECT 1
+                FROM stores s
+                WHERE s.id = tasks.store_id
+                  AND s.assigned_user_id::text = current_setting('app.current_user_id', true)
+            )
+        )
+        WITH CHECK (
+            current_setting('app.current_user_role', true) = 'manager'
+            AND EXISTS (
+                SELECT 1
+                FROM stores s
+                WHERE s.id = tasks.store_id
+                  AND s.assigned_user_id::text = current_setting('app.current_user_id', true)
+            )
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'task_internal_state' AND policyname = 'task_internal_state_dispatcher_all'
+    ) THEN
+        CREATE POLICY task_internal_state_dispatcher_all ON task_internal_state
+        USING (current_setting('app.current_user_role', true) = 'dispatcher')
+        WITH CHECK (current_setting('app.current_user_role', true) = 'dispatcher');
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'task_internal_state' AND policyname = 'task_internal_state_manager_own'
+    ) THEN
+        CREATE POLICY task_internal_state_manager_own ON task_internal_state
+        USING (
+            current_setting('app.current_user_role', true) = 'manager'
+            AND EXISTS (
+                SELECT 1
+                FROM tasks t
+                JOIN stores s ON s.id = t.store_id
+                WHERE t.id = task_internal_state.task_id
+                  AND s.assigned_user_id::text = current_setting('app.current_user_id', true)
+            )
+        )
+        WITH CHECK (
+            current_setting('app.current_user_role', true) = 'manager'
+            AND EXISTS (
+                SELECT 1
+                FROM tasks t
+                JOIN stores s ON s.id = t.store_id
+                WHERE t.id = task_internal_state.task_id
+                  AND s.assigned_user_id::text = current_setting('app.current_user_id', true)
+            )
+        );
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'device_subscriptions' AND policyname = 'device_subscriptions_dispatcher_all'
+    ) THEN
+        CREATE POLICY device_subscriptions_dispatcher_all ON device_subscriptions
+        USING (current_setting('app.current_user_role', true) = 'dispatcher')
+        WITH CHECK (current_setting('app.current_user_role', true) = 'dispatcher');
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'device_subscriptions' AND policyname = 'device_subscriptions_self'
+    ) THEN
+        CREATE POLICY device_subscriptions_self ON device_subscriptions
+        USING (user_id::text = current_setting('app.current_user_id', true))
+        WITH CHECK (user_id::text = current_setting('app.current_user_id', true));
+    END IF;
+END
+$$;

@@ -1,11 +1,26 @@
-<!doctype html>
-<html lang="ru">
+<html>
 <head>
-  <meta charset="utf-8">
-  <meta http-equiv="refresh" content="0; url=/ui/tasks">
-  <title>Переход к задачам</title>
+<title>Tasks Workspace</title>
 </head>
 <body>
-  <p>Переход к задачам...</p>
+<h1>Tasks Workspace</h1>
+<table border="1">
+<tr>
+<th>Portal</th>
+<th>Store</th>
+<th>Status</th>
+<th>SLA</th>
+<th>Last Seen</th>
+</tr>
+{% for t in tasks %}
+<tr>
+<td><a href="/ui/tasks/{{t.id}}">{{t.portal_task_id}}</a></td>
+<td>{{t.store_no}}</td>
+<td>{{t.status}}</td>
+<td>{{t.sla_due_at}}</td>
+<td>{{t.last_seen_at}}</td>
+</tr>
+{% endfor %}
+</table>
 </body>
 </html>

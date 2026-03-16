@@ -238,7 +238,7 @@ async def command_center_overview(session: AsyncSession = Depends(db_session)):
                     """
                     select count(*)
                     from tasks
-                    where coalesce(status, '') not in ('done', 'closed', 'cancelled', 'resolved')
+                    where coalesce(status, '') not in ('resolved', 'resolved', 'cancelled', 'resolved')
                     """,
                     "select count(*) from tasks",
                 ],
@@ -255,14 +255,14 @@ async def command_center_overview(session: AsyncSession = Depends(db_session)):
                     from tasks
                     where sla_due_at is not null
                       and sla_due_at < now()
-                      and coalesce(status, '') not in ('done', 'closed', 'cancelled', 'resolved')
+                      and coalesce(status, '') not in ('resolved', 'resolved', 'cancelled', 'resolved')
                     """,
                     """
                     select count(*)
                     from tasks
                     where sla is not null
                       and sla < now()
-                      and coalesce(status, '') not in ('done', 'closed', 'cancelled', 'resolved')
+                      and coalesce(status, '') not in ('resolved', 'resolved', 'cancelled', 'resolved')
                     """,
                 ],
                 0,

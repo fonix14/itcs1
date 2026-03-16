@@ -1,0 +1,362 @@
+:root {
+  --resp-gap: 16px;
+  --resp-gap-sm: 10px;
+}
+
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+* {
+  min-width: 0;
+}
+
+.page,
+.container {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.topbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.topbar-actions .btn,
+.topbar-actions .action-btn,
+.topbar-actions button {
+  white-space: nowrap;
+}
+
+.grid-2,
+.server-grid,
+.kpi-grid,
+.dd-grid,
+.dd-grid-2 {
+  min-width: 0;
+}
+
+.card {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.input,
+.table-input,
+.table-select,
+textarea,
+select,
+button {
+  max-width: 100%;
+}
+
+.manager-action-card,
+.password-box,
+.password-actions-row,
+.manager-main-actions,
+.assign-box,
+.actions-cell {
+  min-width: 0;
+}
+
+.manager-action-card {
+  display: grid;
+  gap: 10px;
+}
+
+.password-actions-row,
+.manager-main-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.password-actions-row .mini-btn,
+.manager-main-actions .mini-btn {
+  width: 100%;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.assign-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.cpu-cores-box,
+.comments,
+.task-list {
+  min-width: 0;
+}
+
+@media (max-width: 1400px) {
+  .page,
+  .container {
+    max-width: 1280px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .server-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1200px) {
+  .page,
+  .container {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .grid-2,
+  .dd-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dd-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .password-actions-row,
+  .manager-main-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .form-grid > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .grid-2,
+  .kpi-grid,
+  .server-grid,
+  .dd-grid,
+  .dd-grid-2,
+  .form-grid,
+  .form-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .password-actions-row,
+  .manager-main-actions,
+  .assign-box {
+    grid-template-columns: 1fr !important;
+  }
+
+  .title,
+  h1 {
+    font-size: 32px !important;
+    line-height: 1.15 !important;
+  }
+
+  .subline,
+  .sub {
+    font-size: 13px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .page,
+  .container {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .title,
+  h1 {
+    font-size: 28px !important;
+  }
+
+  .btn,
+  .action-btn,
+  .mini-btn,
+  button {
+    width: 100%;
+  }
+
+  .topbar-actions .btn,
+  .topbar-actions .action-btn {
+    width: auto;
+  }
+
+  .table,
+  .table thead,
+  .table tbody,
+  .table tr,
+  .table td,
+  .table th {
+    display: block;
+    width: 100% !important;
+  }
+
+  .table thead {
+    display: none !important;
+  }
+
+  .table tr {
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(34, 50, 82, 0.75);
+  }
+
+  .table td {
+    border-bottom: 0 !important;
+    padding: 6px 0 !important;
+  }
+
+  .card {
+    border-radius: 16px !important;
+  }
+}
+
+/* ===== UI typography clamp fix ===== */
+h1, .page-title, .hero-title {
+  font-size: clamp(28px, 3.2vw, 42px) !important;
+  line-height: 1.08 !important;
+}
+
+h2, .section-title, .block-title {
+  font-size: clamp(18px, 1.8vw, 24px) !important;
+  line-height: 1.15 !important;
+}
+
+h3 {
+  font-size: clamp(16px, 1.4vw, 20px) !important;
+}
+
+.metric-value,
+.stat-value,
+.kpi-value,
+.big-number,
+.dashboard-number {
+  font-size: clamp(28px, 2.4vw, 42px) !important;
+  line-height: 1.05 !important;
+}
+
+.card-title,
+.manager-name,
+.store-title {
+  font-size: clamp(18px, 1.4vw, 24px) !important;
+}
+
+body,
+input,
+textarea,
+select,
+button {
+  font-size: 14px !important;
+}
+
+.kv-value,
+.table-value,
+.meta-value {
+  font-size: 15px !important;
+}
+
+/* ===== HARD STOP FOR OVERSIZED TYPOGRAPHY ===== */
+h1,
+.page-title,
+.hero-title,
+.title-xl {
+  font-size: 30px !important;
+  line-height: 1.08 !important;
+}
+
+h2,
+.section-title,
+.block-title,
+.title-lg {
+  font-size: 18px !important;
+  line-height: 1.12 !important;
+}
+
+.metric-value,
+.stat-value,
+.kpi-value,
+.big-number,
+.dashboard-number,
+.numeric-xl,
+.numeric-lg,
+.value-xl {
+  font-size: 18px !important;
+  line-height: 1.05 !important;
+  font-weight: 700 !important;
+}
+
+.card-title,
+.manager-name,
+.store-title,
+.list-title,
+.panel-title {
+  font-size: 16px !important;
+}
+
+body,
+input,
+textarea,
+select,
+button,
+label {
+  font-size: 13px !important;
+}
+
+.kv-value,
+.table-value,
+.meta-value,
+.card-value,
+.value {
+  font-size: 13px !important;
+}
+
+.small,
+.muted,
+.hint,
+.meta,
+.secondary-text,
+.caption,
+.label {
+  font-size: 12px !important;
+}

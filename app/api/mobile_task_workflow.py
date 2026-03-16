@@ -32,13 +32,6 @@ def _require_actor(user_id: str | None, role: str | None) -> tuple[str, str]:
     return user_id, role or "manager"
 
 
-@router.get("/m/task/{task_id}", response_class=HTMLResponse)
-async def mobile_task_page(request: Request, task_id: UUID):
-    return templates.TemplateResponse(
-        "mobile_task_portal.html",
-        {"request": request, "task_id": str(task_id), "page_title": "Карточка заявки"},
-    )
-
 
 @router.get("/api/mobile/task/{task_id}")
 async def api_mobile_task_detail(

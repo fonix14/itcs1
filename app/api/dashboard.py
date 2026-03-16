@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth import require_dispatcher
 from app.db import db_session
 from app.services.dashboard_service import (
     get_dashboard_metrics,
@@ -7,7 +9,7 @@ from app.services.dashboard_service import (
     get_sla_metrics,
 )
 
-router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
+router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], dependencies=[Depends(require_dispatcher)])
 
 
 @router.get("")

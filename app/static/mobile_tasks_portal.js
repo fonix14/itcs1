@@ -3,7 +3,7 @@ let deferredPrompt = null;
 
 function formatDate(value) {
   if (!value) return "—";
-  try { return new Date(value).toLocaleString(); } catch { return String(value); }
+  try { return new Date(value).toLocaleString("ru-RU"); } catch { return String(value); }
 }
 
 function renderSla(value) {
@@ -17,31 +17,13 @@ function renderSla(value) {
   return `<span class="${cls}">${formatDate(value)}</span>`;
 }
 
-function getActorId() {
-  let value = localStorage.getItem("itcs_manager_uuid") || "";
-  if (!value) {
-    value = prompt("Введите UUID пользователя (X-User-Id):", "") || "";
-    value = value.trim();
-    if (value) localStorage.setItem("itcs_manager_uuid", value);
-  }
-  const input = document.getElementById("manager_uuid");
-  if (input) input.value = value;
-  return value;
-}
-
-function setActorId() {
-  const input = document.getElementById("manager_uuid");
-  const value = (input?.value || "").trim();
-  if (value) localStorage.setItem("itcs_manager_uuid", value);
-  else localStorage.removeItem("itcs_manager_uuid");
-  loadTasks();
-}
-
-function apiHeaders() {
-  const actorId = getActorId();
-  const headers = { "X-User-Role": "manager" };
-  if (actorId) headers["X-User-Id"] = actorId;
-  return headers;
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function setFilter(name, btn) {
@@ -75,7 +57,7 @@ async function loadTasks() {
   const meta = document.getElementById("meta");
   container.innerHTML = "Загрузка...";
   try {
-    const resp = await fetch("/api/mobile/tasks", { headers: apiHeaders() });
+    const resp = await fetch("/api/mobile/tasks", { credentials: "same-origin" });
     const payload = await resp.json();
     if (payload.status !== "ok") throw new Error(payload.error || "load failed");
 
@@ -103,19 +85,19 @@ async function loadTasks() {
       a.innerHTML = `
         <div class="task-top">
           <div>
-            <div class="task-title">${item.portal_task_id ?? item.id}</div>
-            <div class="task-store">Магазин: ${item.store_no ?? "—"}</div>
+            <div class="task-title">${esc(item.portal_task_id ?? item.id)}</div>
+            <div class="task-store">Магазин: ${esc(item.store_no ?? "—")} ${item.store_name ? "— " + esc(item.store_name) : ""}</div>
           </div>
-          <div class="status">${item.internal_status === "accepted" ? "Принята" : (item.status ?? "—")}</div>
+          <div class="status">${esc(item.internal_status === "accepted" ? "Принята" : (item.status ?? "—"))}</div>
         </div>
-        <div class="grid">
+        <div class="grid2">
           <div>
             <div class="label">SLA</div>
             <div class="value">${renderSla(item.sla)}</div>
           </div>
           <div>
             <div class="label">Last seen</div>
-            <div class="value">${formatDate(item.last_seen_at)}</div>
+            <div class="value">${esc(formatDate(item.last_seen_at))}</div>
           </div>
         </div>
       `;
@@ -123,7 +105,7 @@ async function loadTasks() {
     }
   } catch (e) {
     meta.textContent = "Ошибка";
-    container.innerHTML = `<div class="error">${String(e)}</div>`;
+    container.innerHTML = `<div class="error">${esc(String(e))}</div>`;
     console.error(e);
   }
 }
@@ -150,6 +132,5 @@ if ("serviceWorker" in navigator) {
 }
 
 window.addEventListener("load", () => {
-  getActorId();
   loadTasks();
 });

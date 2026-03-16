@@ -1,68 +1,58 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_dispatcher
 from app.db import db_session
-from app.services.tasks_ui_service import (
-    list_tasks,
-    get_task_card,
-    add_task_comment,
-    accept_task,
+
+router = APIRouter(
+    tags=["tasks_ui"],
+    dependencies=[Depends(require_dispatcher)],
 )
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks-ui"])
 
-
-class TaskCommentIn(BaseModel):
-    comment: str
-
-
-@router.get("")
-async def api_list_tasks(
+@router.get("/api/tasks")
+async def api_tasks(
     overdue_only: bool = Query(default=False),
-    limit: int = Query(default=100, ge=1, le=500),
     session: AsyncSession = Depends(db_session),
 ):
     try:
-        data = await list_tasks(session=session, overdue_only=overdue_only, limit=limit)
-        return {"status": "ok", "data": data}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
+        where_sql = ""
+        if overdue_only:
+            where_sql = """
+            where t.sla_due_at is not null
+              and t.sla_due_at < now()
+            """
 
+        result = await session.execute(
+            text(
+                f"""
+                select
+                    t.id::text as id,
+                    t.portal_task_id,
+                    t.status as status,
+                    coalesce(t.internal_status, 'new') as internal_status,
+                    t.sla_due_at as sla,
+                    t.last_seen_at,
+                    s.store_no,
+                    coalesce(u.full_name, u.email, '—') as manager_name
+                from tasks t
+                left join stores s on s.id = t.store_id
+                left join users u on u.id = s.assigned_user_id
+                {where_sql}
+                order by
+                    case when t.sla_due_at is null then 1 else 0 end,
+                    t.sla_due_at asc,
+                    t.created_at desc
+                limit 100
+                """
+            )
+        )
 
-@router.get("/{task_id}")
-async def api_get_task(task_id: int, session: AsyncSession = Depends(db_session)):
-    data = await get_task_card(session=session, task_id=task_id)
-    if not data:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return {"status": "ok", "data": data}
+        rows = [dict(r) for r in result.mappings().all()]
+        return {"status": "ok", "data": rows}
 
-
-@router.post("/{task_id}/comment")
-async def api_add_comment(
-    task_id: int,
-    payload: TaskCommentIn,
-    session: AsyncSession = Depends(db_session),
-):
-    try:
-        data = await add_task_comment(session=session, task_id=task_id, comment=payload.comment)
-        if not data:
-            raise HTTPException(status_code=404, detail="Task not found")
-        return {"status": "ok", "data": data}
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-
-
-@router.post("/{task_id}/accept")
-async def api_accept_task(task_id: int, session: AsyncSession = Depends(db_session)):
-    try:
-        data = await accept_task(session=session, task_id=task_id)
-        if not data:
-            raise HTTPException(status_code=404, detail="Task not found")
-        return {"status": "ok", "data": data}
-    except HTTPException:
-        raise
     except Exception as e:
         return {"status": "error", "error": str(e)}

@@ -1,0 +1,24 @@
+<html>
+<head>
+<title>ITCS Tasks</title>
+</head>
+<body>
+<h1>Tasks</h1>
+<table border="1">
+<tr>
+<th>Portal ID</th>
+<th>Store</th>
+<th>Status</th>
+<th>SLA</th>
+</tr>
+{% for t in tasks %}
+<tr>
+<td>{{t.portal_task_id}}</td>
+<td>{{t.store_no}}</td>
+<td>{{t.status}}</td>
+<td>{{t.sla_due_at}}</td>
+</tr>
+{% endfor %}
+</table>
+</body>
+</html>

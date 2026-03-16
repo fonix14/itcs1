@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 from uuid import UUID
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, HTTPException, Request
+
+from app.auth import get_actor_from_session_or_header
 
 
 @dataclass
@@ -14,16 +15,18 @@ class MobileActor:
 
 
 async def get_mobile_actor(
-    x_user_id: Optional[str] = Header(default=None, alias="X-User-Id"),
-    x_user_role: Optional[str] = Header(default=None, alias="X-User-Role"),
+    request: Request,
+    actor: tuple[str | None, str | None] = Depends(get_actor_from_session_or_header),
 ) -> MobileActor:
-    if not x_user_id:
-        raise HTTPException(status_code=401, detail="X-User-Id header is required")
-    if not x_user_role:
-        raise HTTPException(status_code=401, detail="X-User-Role header is required")
+    x_user_id, x_user_role = actor
 
-    role = x_user_role.strip().lower()
-    if role not in {"manager", "dispatcher"}:
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="Login required")
+    if not x_user_role:
+        raise HTTPException(status_code=401, detail="Role required")
+
+    role = str(x_user_role).strip().lower()
+    if role not in {"manager", "dispatcher", "admin"}:
         raise HTTPException(status_code=403, detail="Unsupported role")
 
     try:

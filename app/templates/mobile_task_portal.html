@@ -5,69 +5,317 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>{{ page_title }}</title>
   <style>
-    :root { color-scheme: dark; }
-    body { margin:0; background:#081733; color:#e8edf7; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    .wrap { max-width:900px; margin:0 auto; padding:24px 18px 40px; }
-    .toplink { color:#9ec2ff; text-decoration:none; display:inline-block; margin-bottom:18px; }
-    h1 { margin:0 0 12px; font-size:40px; }
-    .error { display:none; margin:16px 0; padding:14px 16px; border-radius:18px; border:1px solid rgba(255,120,120,.35); background:rgba(120,20,20,.22); color:#ffd6d6; }
-    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
-    .card, .actions, .comments, .payload-wrap { border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); border-radius:24px; padding:18px; }
-    .kv { display:grid; grid-template-columns:180px 1fr; gap:8px 14px; }
-    .kv div:nth-child(odd) { color:#9fb0cc; }
-    .actions { display:grid; gap:12px; }
-    .actions-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
-    button { border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#fff; border-radius:18px; padding:16px 18px; font-size:18px; cursor:pointer; }
-    textarea { width:100%; min-height:120px; box-sizing:border-box; resize:vertical; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05); color:#fff; border-radius:18px; padding:14px 16px; font-size:16px; }
-    pre { margin:0; white-space:pre-wrap; word-break:break-word; font-size:14px; color:#e8edf7; }
-    .comment-card { border:1px solid rgba(255,255,255,.10); border-radius:18px; padding:14px; margin-top:12px; background:rgba(255,255,255,.03); }
-    .comment-head { display:flex; justify-content:space-between; gap:12px; color:#cfdaf0; margin-bottom:8px; }
-    .muted { color:#9fb0cc; }
-    @media (max-width: 800px) { h1 { font-size:30px; } .grid, .actions-row, .kv { grid-template-columns:1fr; } }
+    :root {
+      color-scheme: dark;
+      --bg-1: #071427;
+      --bg-2: #0a1b36;
+      --panel: rgba(255,255,255,0.045);
+      --panel-border: rgba(255,255,255,0.10);
+      --text: #e8edf7;
+      --muted: #9fb0cc;
+      --accent: #5f9bff;
+      --danger-bg: rgba(120,20,20,.22);
+      --danger-border: rgba(255,120,120,.35);
+      --danger-text: #ffd6d6;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { font-size: 16px; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(25,58,120,.28), transparent 30%),
+        linear-gradient(180deg, var(--bg-1), var(--bg-2));
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      line-height: 1.45;
+    }
+
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 22px 18px 40px;
+    }
+
+    .toplink {
+      color: #b9d3ff;
+      text-decoration: none;
+      display: inline-block;
+      margin-bottom: 16px;
+      font-size: 15px;
+    }
+
+    .toplink:hover { text-decoration: underline; }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(26px, 3.1vw, 42px);
+      line-height: 1.08;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .error {
+      display: none;
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--danger-border);
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      font-size: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.95fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card,
+    .actions,
+    .comments,
+    .payload-wrap {
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      border-radius: 24px;
+      padding: 18px 20px;
+      backdrop-filter: blur(6px);
+    }
+
+    .section-title {
+      margin: 0 0 14px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 0;
+    }
+
+    .kv-key,
+    .kv-value {
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+
+    .kv-key {
+      color: var(--muted);
+      font-size: 14px;
+      padding-right: 14px;
+    }
+
+    .kv-value {
+      font-size: 15px;
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .chip {
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.03);
+      color: #d8e4fb;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .actions {
+      display: grid;
+      gap: 14px;
+    }
+
+    .actions-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    button {
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.05);
+      color: #fff;
+      border-radius: 16px;
+      padding: 13px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 46px;
+    }
+
+    button.primary {
+      background: linear-gradient(180deg, #68a0ff, #4d84eb);
+      border-color: rgba(120,170,255,.45);
+    }
+
+    button:hover { filter: brightness(1.04); }
+
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      resize: vertical;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(5,12,30,.55);
+      color: #fff;
+      border-radius: 18px;
+      padding: 14px 16px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #e8edf7;
+      overflow-x: auto;
+    }
+
+    .comment-card {
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 18px;
+      padding: 14px;
+      margin-top: 12px;
+      background: rgba(255,255,255,.025);
+    }
+
+    .comment-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: #cfdaf0;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .comment-text {
+      font-size: 14px;
+      color: #f0f4fb;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .actions-row { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .wrap { padding: 18px 14px 28px; }
+      h1 { font-size: 28px; }
+      .subtitle { font-size: 15px; }
+      .kv { grid-template-columns: 1fr; }
+      .kv-key {
+        padding-bottom: 4px;
+        border-bottom: none;
+      }
+      .kv-value {
+        padding-top: 0;
+        padding-bottom: 14px;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <a class="toplink" href="/m/tasks">← Назад к списку</a>
+
     <h1>Карточка заявки</h1>
+    <p class="subtitle">Полная заявка, обсуждение, история и база для аналитики.</p>
+
     <div id="task-error" class="error"></div>
 
     <div class="grid">
       <section class="card">
+        <h2 class="section-title">Детали заявки</h2>
+
         <div class="kv">
-          <div>Portal ID</div><div id="task-portal-id">—</div>
-          <div>Магазин</div><div id="task-store-no">—</div>
-          <div>Статус портала</div><div id="task-status">—</div>
-          <div>Внутренний статус</div><div id="task-internal-status">—</div>
-          <div>SLA</div><div id="task-sla">—</div>
-          <div>Last seen</div><div id="task-last-seen">—</div>
-          <div>Менеджер</div><div id="task-manager">—</div>
+          <div class="kv-key">ID</div>
+          <div class="kv-value" id="task-id">—</div>
+
+          <div class="kv-key">Portal ID</div>
+          <div class="kv-value" id="task-portal-id">—</div>
+
+          <div class="kv-key">Магазин</div>
+          <div class="kv-value" id="task-store-no">—</div>
+
+          <div class="kv-key">Адрес</div>
+          <div class="kv-value" id="task-store-address">—</div>
+
+          <div class="kv-key">Статус портала</div>
+          <div class="kv-value" id="task-status">—</div>
+
+          <div class="kv-key">Внутренний статус</div>
+          <div class="kv-value" id="task-internal-status">—</div>
+
+          <div class="kv-key">SLA</div>
+          <div class="kv-value" id="task-sla">—</div>
+
+          <div class="kv-key">Last seen</div>
+          <div class="kv-value" id="task-last-seen">—</div>
+
+          <div class="kv-key">Менеджер</div>
+          <div class="kv-value" id="task-manager">—</div>
+        </div>
+
+        <div class="chips">
+          <span class="chip" id="comments-count-chip">Комментариев: 0</span>
+          <span class="chip" id="viewer-role-chip">Роль просмотра: manager</span>
         </div>
       </section>
 
       <section class="actions">
+        <h2 class="section-title">Обсуждение по заявке</h2>
+
+        <textarea id="task-comment-input" placeholder="Написать комментарий по заявке..."></textarea>
+
         <div class="actions-row">
           <button id="btn-reload-task">Обновить</button>
-          <button id="btn-accept-task">Принять</button>
-          <button id="btn-close-task">Закрыть</button>
+          <button id="btn-add-comment" class="primary">Добавить комментарий</button>
         </div>
-        <textarea id="task-comment-input" placeholder="Комментарий менеджера"></textarea>
-        <button id="btn-add-comment">Добавить комментарий</button>
       </section>
     </div>
 
-    <section class="payload-wrap" style="margin-top:14px;">
-      <h3>Payload</h3>
+    <section class="payload-wrap" style="margin-top:18px;">
+      <h3 class="section-title">Payload</h3>
       <pre id="task-payload">{}</pre>
     </section>
 
-    <section class="comments" style="margin-top:14px;">
-      <h3>Комментарии</h3>
+    <section class="comments" style="margin-top:18px;">
+      <h3 class="section-title">Комментарии</h3>
       <div id="task-comments"><div class="muted">Загрузка...</div></div>
     </section>
   </div>
 
   <script>window.__TASK_ID__ = "{{ task_id }}";</script>
-  <script src="/static/mobile_task_portal.js"></script>
+  <script src="/static/mobile_task_portal.js?v=fix3"></script>
 </body>
 </html>

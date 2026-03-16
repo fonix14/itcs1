@@ -162,7 +162,7 @@ async def get_sla_metrics(session):
         select count(*)
         from tasks
         where sla is not null
-          and status not in ('done', 'closed', 'resolved', 'cancelled')
+          and status not in ('resolved', 'resolved', 'resolved', 'cancelled')
           and sla < now()
         ''',
         default=0,
@@ -174,7 +174,7 @@ async def get_sla_metrics(session):
         select count(*)
         from tasks
         where sla is not null
-          and status not in ('done', 'closed', 'resolved', 'cancelled')
+          and status not in ('resolved', 'resolved', 'resolved', 'cancelled')
           and sla >= now()
           and sla < (now() + interval '24 hour')
         ''',
@@ -190,12 +190,12 @@ async def get_sla_metrics(session):
             count(t.id) as active_tasks,
             count(*) filter (
                 where t.sla is not null
-                  and t.status not in ('done', 'closed', 'resolved', 'cancelled')
+                  and t.status not in ('resolved', 'resolved', 'resolved', 'cancelled')
                   and t.sla < now()
             ) as overdue_tasks,
             count(*) filter (
                 where t.sla is not null
-                  and t.status not in ('done', 'closed', 'resolved', 'cancelled')
+                  and t.status not in ('resolved', 'resolved', 'resolved', 'cancelled')
                   and t.sla >= now()
                   and t.sla < (now() + interval '24 hour')
             ) as risk_24h_tasks

@@ -13,14 +13,14 @@ async def director_landing(db: AsyncSession = Depends(get_db)):
         active_tasks_q = await db.execute(text("""
             select count(*) as cnt
             from tasks
-            where status not in ('done','closed','cancelled')
+            where status not in ('resolved','cancelled')
         """))
         active_tasks = int(active_tasks_q.scalar_one())
 
         overdue_sla_q = await db.execute(text("""
             select count(*) as cnt
             from tasks
-            where status not in ('done','closed','cancelled')
+            where status not in ('resolved','cancelled')
               and sla_due_at is not null
               and sla_due_at < now()
         """))
@@ -93,11 +93,11 @@ async def director_landing(db: AsyncSession = Depends(get_db)):
         ]
 
         roadmap = [
-            {"stage": "Stage 15A", "title": "Command Center", "status": "done"},
-            {"stage": "Stage 15B", "title": "Executive Dashboard", "status": "done"},
-            {"stage": "Stage 15C", "title": "Mini Analytics", "status": "done"},
-            {"stage": "Stage 15D", "title": "Director Landing", "status": "done"},
-            {"stage": "Stage 15E", "title": "Unified Navigation", "status": "done"},
+            {"stage": "Stage 15A", "title": "Command Center", "status": "resolved"},
+            {"stage": "Stage 15B", "title": "Executive Dashboard", "status": "resolved"},
+            {"stage": "Stage 15C", "title": "Mini Analytics", "status": "resolved"},
+            {"stage": "Stage 15D", "title": "Director Landing", "status": "resolved"},
+            {"stage": "Stage 15E", "title": "Unified Navigation", "status": "resolved"},
             {"stage": "Stage 16", "title": "Cleaning Module Skeleton", "status": "next"},
         ]
 

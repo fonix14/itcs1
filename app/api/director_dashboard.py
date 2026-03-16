@@ -98,14 +98,14 @@ async def director_dashboard(db: AsyncSession = Depends(get_db)):
         active_tasks_q = await db.execute(text("""
             select count(*) as cnt
             from tasks
-            where status not in ('done','closed','cancelled')
+            where status not in ('resolved','cancelled')
         """))
         active_tasks = int(active_tasks_q.scalar_one())
 
         overdue_sla_q = await db.execute(text("""
             select count(*) as cnt
             from tasks
-            where status not in ('done','closed','cancelled')
+            where status not in ('resolved','cancelled')
               and sla_due_at is not null
               and sla_due_at < now()
         """))
@@ -138,7 +138,7 @@ async def director_dashboard(db: AsyncSession = Depends(get_db)):
                 count(*) as open_tasks
             from tasks t
             join stores s on s.id = t.store_id
-            where t.status not in ('done','closed','cancelled')
+            where t.status not in ('resolved','cancelled')
             group by s.store_no
             order by open_tasks desc, s.store_no asc
             limit 10
@@ -152,7 +152,7 @@ async def director_dashboard(db: AsyncSession = Depends(get_db)):
             from tasks t
             join stores s on s.id = t.store_id
             left join users u on u.id = s.assigned_user_id
-            where t.status not in ('done','closed','cancelled')
+            where t.status not in ('resolved','cancelled')
             group by coalesce(u.full_name,u.email,'—')
             order by open_tasks desc, full_name asc
             limit 10

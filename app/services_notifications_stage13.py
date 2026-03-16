@@ -47,7 +47,7 @@ async def _enqueue_manager_digests(session: AsyncSession, upload_id, *, created:
     for manager_id, manager_name in managers:
         mid = str(manager_id)
         new_for_manager = created_by_manager.get(mid, 0)
-        res3 = await session.execute(select(func.count(Task.id)).join(Store, Store.id == Task.store_id).where(Store.assigned_user_id == manager_id).where(Task.status != "closed"))
+        res3 = await session.execute(select(func.count(Task.id)).join(Store, Store.id == Task.store_id).where(Store.assigned_user_id == manager_id).where(Task.status != "resolved"))
         total_open = int(res3.scalar_one() or 0)
         text = (f"📥 Импорт завершён — {manager_name}\n\nНовых (твоих): {new_for_manager}\nНовых (всего): {created}\nОбновлено: {updated}\nОшибок: {invalid}\nОткрытых задач у тебя: {total_open}\nTrust: {trust}")
         payload = {"text": text, "upload_id": str(upload_id), "manager_user_id": mid, "kind": "digest"}

@@ -135,7 +135,7 @@ async def _enqueue_manager_digests(
             select(func.count(Task.id))
             .join(Store, Store.id == Task.store_id)
             .where(Store.assigned_user_id == manager_id)
-            .where(Task.status != "closed")
+            .where(Task.status != "resolved")
         )
         total_open = int(res3.scalar_one() or 0)
 
